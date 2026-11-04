@@ -65,6 +65,7 @@ export type AlokoRow = {
   state: string;
   lat: number | null;
   lng: number | null;
+  coverage: string;
 };
 
 export type ServiceRow = {
@@ -136,6 +137,7 @@ type ListingSql = {
   state: string;
   lat: number | null;
   lng: number | null;
+  coverage: string;
 };
 
 function text(value: unknown, max: number) {
@@ -174,6 +176,7 @@ function toRow(row: ListingSql): AlokoRow {
     state: row.state ?? "",
     lat: row.lat,
     lng: row.lng,
+    coverage: row.coverage || "city",
   };
 }
 
@@ -265,7 +268,7 @@ async function profileOf(sql: Sql, userId: string): Promise<AlokoProfile> {
 export const listLiveListings = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await getSql();
   const rows = await sql<ListingSql>`
-    select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng
+    select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage
     from aloko_listings
     where status = 'active' and paused = false and sold_at is null
     order by created_at desc
@@ -281,7 +284,7 @@ export const getDashboard = createServerFn({ method: "GET" })
     const profile = await profileOf(sql, context.userId);
     const listings = (
       await sql<ListingSql>`
-        select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng
+        select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage
         from aloko_listings where user_id = ${context.userId} order by created_at desc limit 40
       `
     ).map(toRow);
@@ -327,7 +330,7 @@ export const getDashboard = createServerFn({ method: "GET" })
     if (isStaff(profile.roles)) {
       queue = (
         await sql<ListingSql>`
-          select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng
+          select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage
           from aloko_listings where status = 'pending' order by created_at desc limit 40
         `
       ).map(toRow);
@@ -895,5 +898,19 @@ export const finishOnboarding = createServerFn({ method: "POST" })
       where user_id = ${context.userId}
     `;
     return { role: data.role };
+  });
+
+export const saveRadius = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((km: number) => {
+    const radius = Number(km);
+    if (![0, 5, 10, 25, 50, 100].includes(radius)) throw new Error("Choose a distance.");
+    return radius;
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    await profileOf(sql, context.userId);
+    await sql`update aloko_profiles set radius_km = ${data} where user_id = ${context.userId}`;
+    return { radiusKm: data };
   });
 

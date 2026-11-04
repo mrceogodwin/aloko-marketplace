@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { GROK_PROVIDERS, authClient, signIn } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { activateRole, createListing, decideListing, getDashboard, listLiveListings, openThread, recordView, toggleSave, type AlokoRole, type AlokoRow, type DashboardData } from "@/lib/aloko.functions";
+import { activateRole, createListing, decideListing, getDashboard, listLiveListings, openThread, recordView, saveRadius, toggleSave, type AlokoRole, type AlokoRow, type DashboardData } from "@/lib/aloko.functions";
 import { ChatDesk } from "@/components/aloko/ChatDesk";
 import { Onboarding } from "@/components/aloko/Onboarding";
 import { Workspace } from "@/components/aloko/Workspace";
-import { distanceKm } from "@/lib/places";
+import { distanceKm, placeFor } from "@/lib/places";
 
 type Kind = "sale" | "giveaway" | "bulk";
 type Tab = "home" | "buy" | "sell" | "messages" | "account";
@@ -35,6 +35,7 @@ type Listing = {
   state?: string;
   lat?: number | null;
   lng?: number | null;
+  coverage?: string;
 };
 
 const CATEGORIES = [
@@ -168,6 +169,34 @@ const SEED: Listing[] = [
     description: "Desks, chairs and a filing cabinet from a Victoria Island office move. Sold as one lot.",
   },
 ];
+
+const SPOTS: Record<string, { area: string; coverage: string }> = {
+  iphone: { area: "Lekki", coverage: "city" },
+  sofa: { area: "Wuse", coverage: "city" },
+  mac: { area: "Yaba", coverage: "neighbourhood" },
+  chair: { area: "GRA", coverage: "city" },
+  sneaker: { area: "Ikeja", coverage: "neighbourhood" },
+  blender: { area: "Gwarinpa", coverage: "neighbourhood" },
+  weights: { area: "Surulere", coverage: "city" },
+  books: { area: "Gwarinpa", coverage: "neighbourhood" },
+  bulk: { area: "Lekki", coverage: "nationwide" },
+};
+
+for (const item of SEED) {
+  const spot = placeFor(item.city, SPOTS[item.id]?.area ?? "");
+  item.area = spot?.area;
+  item.state = spot?.state;
+  item.lat = spot?.lat ?? null;
+  item.lng = spot?.lng ?? null;
+  item.coverage = SPOTS[item.id]?.coverage ?? "city";
+}
+
+function reach(coverage?: string) {
+  if (coverage === "nationwide") return "Nationwide delivery";
+  if (coverage === "state") return "Delivery in this state";
+  if (coverage === "neighbourhood") return "Pickup in this area";
+  return "Pickup, or delivery in this city";
+}
 
 const naira = (value: number) =>
   value === 0
@@ -334,6 +363,7 @@ function fromRow(row: AlokoRow): Listing {
     state: row.state,
     lat: row.lat,
     lng: row.lng,
+    coverage: row.coverage,
   };
 }
 
@@ -626,6 +656,19 @@ export function AlokoApp() {
       return `${item.title} ${item.city} ${item.category} ${item.seller}`.toLowerCase().includes(q);
     });
   }, [listings, query, city, category, kind, savedOnly, saved]);
+
+  const originLat = dash?.profile.lat;
+  const originLng = dash?.profile.lng;
+  const around = useMemo(() => {
+    if (originLat == null || originLng == null) return [];
+    const origin = { lat: originLat, lng: originLng };
+    return listings
+      .filter((item) => isLive(item) && !item.paused && !item.sold && item.kind === "sale" && item.lat != null && item.lng != null)
+      .map((item) => ({ item, km: distanceKm(origin, { lat: item.lat as number, lng: item.lng as number }) }))
+      .filter((row) => radiusKm === 0 || row.km <= radiusKm)
+      .sort((a, b) => a.km - b.km)
+      .slice(0, 8);
+  }, [listings, originLat, originLng, radiusKm]);
 
   const toggleSaved = (id: string) => {
     if (!user) {
@@ -930,6 +973,32 @@ export function AlokoApp() {
                   </div>
                 )}
               </section>
+              {around.length > 0 && (
+                <section className="featured">
+                  <div className="section-head">
+                    <h2>Around {dash?.profile.area || dash?.profile.city || "you"}</h2>
+                  </div>
+                  <div className="h-row">
+                    {around.map(({ item, km }) => (
+                      <article key={item.id} className="listing">
+                        <button className="listing-hit" type="button" onClick={() => setSelected(item)}>
+                          <div className="listing-photo">
+                            <img src={item.image} alt="" />
+                          </div>
+                          <div className="listing-copy">
+                            <strong>{item.title}</strong>
+                            <b>{naira(item.price)}</b>
+                            <span className="place">
+                              <Icon name="pin" />
+                              {item.area ? `${item.area}, ${item.city}` : item.city} · ~{km} km
+                            </span>
+                          </div>
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
           )}
 
@@ -938,7 +1007,11 @@ export function AlokoApp() {
               <h2>{kind === "giveaway" ? "Giveaways" : kind === "bulk" ? "Bulk deals" : category === "All" ? "Browse listings" : category}</h2>
               <label className="form">
                 How far
-                <select aria-label="Distance" value={radiusKm} onChange={(event) => setRadiusKm(Number(event.target.value))}>
+                <select aria-label="Distance" value={radiusKm} onChange={(event) => {
+                  const next = Number(event.target.value);
+                  setRadiusKm(next);
+                  if (user) void saveRadius({ data: next }).catch(() => setToast("That distance did not save."));
+                }}>
                   <option value={0}>Anywhere in Nigeria</option>
                   <option value={5}>Within 5 km</option>
                   <option value={10}>Within 10 km</option>
@@ -1155,9 +1228,14 @@ export function AlokoApp() {
               <div className="price-lg">{naira(selected.price)}</div>
               <p className="place">
                 <Icon name="pin" />
-                {selected.city} · {selected.condition} · {selected.seller}
+                {selected.area ? `${selected.area}, ${selected.city}` : selected.city}
+                {selected.state && selected.state !== selected.city ? `, ${selected.state}` : ""} · {selected.condition} · {selected.seller}
                 {selected.verified ? " · Verified" : ""}
               </p>
+              {originLat != null && originLng != null && selected.lat != null && selected.lng != null && (
+                <p className="type-lead">About {distanceKm({ lat: originLat, lng: originLng }, { lat: selected.lat, lng: selected.lng })} km from your area. Distances are area to area, not a street measurement.</p>
+              )}
+              <p className="type-lead">{reach(selected.coverage)}. The exact pickup point is shared only in chat.</p>
               <p>{selected.description}</p>
               <div className="detail-actions">
                 <button className="ghost" type="button" onClick={() => toggleSaved(selected.id)}>
