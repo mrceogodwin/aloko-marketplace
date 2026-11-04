@@ -5,7 +5,8 @@ import { activateRole, createListing, decideListing, getDashboard, listLiveListi
 import { ChatDesk } from "@/components/aloko/ChatDesk";
 import { Onboarding } from "@/components/aloko/Onboarding";
 import { Workspace } from "@/components/aloko/Workspace";
-import { distanceKm, placeFor } from "@/lib/places";
+import { ListingMap } from "@/components/aloko/ListingMap";
+import { distanceKm, nearestPlace, placeFor } from "@/lib/places";
 
 type Kind = "sale" | "giveaway" | "bulk";
 type Tab = "home" | "buy" | "sell" | "messages" | "account";
@@ -572,6 +573,9 @@ export function AlokoApp() {
   const [pricing, setPricing] = useState(false);
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [radiusKm, setRadiusKm] = useState(0);
+  const [look, setLook] = useState<{ lat: number; lng: number; label: string } | null>(null);
+  const [askNear, setAskNear] = useState(false);
+  const [asMap, setAsMap] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -611,6 +615,9 @@ export function AlokoApp() {
         setMine(data.listings.map(fromRow));
         setSaved(data.saves);
         setRadiusKm(data.profile.radiusKm);
+        if (data.profile.lat != null && data.profile.lng != null) {
+          setLook({ lat: data.profile.lat, lng: data.profile.lng, label: data.profile.area || data.profile.city || "Your area" });
+        }
       })
       .catch(() => {});
   };
@@ -657,8 +664,8 @@ export function AlokoApp() {
     });
   }, [listings, query, city, category, kind, savedOnly, saved]);
 
-  const originLat = dash?.profile.lat;
-  const originLng = dash?.profile.lng;
+  const originLat = look?.lat;
+  const originLng = look?.lng;
   const around = useMemo(() => {
     if (originLat == null || originLng == null) return [];
     const origin = { lat: originLat, lng: originLng };
@@ -691,6 +698,24 @@ export function AlokoApp() {
     setMenu(false);
     setDesk(false); setPricing(false);
     setSelected(null);
+  };
+
+  const useArea = () => {
+    if (!navigator.geolocation) {
+      setToast("This phone has no location. Choose a city instead.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const place = nearestPlace(pos.coords.latitude, pos.coords.longitude);
+        setCity(place.city);
+        setLook({ lat: place.lat, lng: place.lng, label: `${place.area}, ${place.city}` });
+        setAskNear(false);
+        setToast(`${place.area} only. Your exact spot is not saved.`);
+      },
+      () => setToast("Location was blocked. Choose a city instead."),
+      { enableHighAccuracy: false, maximumAge: 60000, timeout: 8000 },
+    );
   };
 
   const decide = (id: string, status: "active" | "rejected") => {
@@ -976,7 +1001,7 @@ export function AlokoApp() {
               {around.length > 0 && (
                 <section className="featured">
                   <div className="section-head">
-                    <h2>Around {dash?.profile.area || dash?.profile.city || "you"}</h2>
+                    <h2>Around {look?.label || "you"}</h2>
                   </div>
                   <div className="h-row">
                     {around.map(({ item, km }) => (
@@ -1005,6 +1030,18 @@ export function AlokoApp() {
           {!desk && tab === "buy" && (
             <div className="sheet">
               <h2>{kind === "giveaway" ? "Giveaways" : kind === "bulk" ? "Bulk deals" : category === "All" ? "Browse listings" : category}</h2>
+              <div className="view-switch">
+                <button className={asMap ? "ghost" : "primary"} type="button" onClick={() => setAsMap(false)}>List</button>
+                <button className={asMap ? "primary" : "ghost"} type="button" onClick={() => setAsMap(true)}>Map</button>
+                <button className="ghost" type="button" onClick={() => setAskNear(true)}>Use my area</button>
+              </div>
+              {askNear && (
+                <div className="form">
+                  <p className="type-lead">Find deals near you. Aloko uses this once to pick your nearest area. Your precise location is not saved, and it is never shown to sellers.</p>
+                  <button className="primary" type="button" onClick={useArea}>Use my current location</button>
+                  <button className="ghost" type="button" onClick={() => setAskNear(false)}>Choose a city instead</button>
+                </div>
+              )}
               <label className="form">
                 How far
                 <select aria-label="Distance" value={radiusKm} onChange={(event) => {
@@ -1022,27 +1059,43 @@ export function AlokoApp() {
               </label>
               {visible.length === 0 ? (
                 <p className="empty">No listings in this filter. Change city, category, or search.</p>
+              ) : asMap ? (
+                <ListingMap
+                  you={originLat != null && originLng != null ? { lat: originLat, lng: originLng } : null}
+                  onOpen={(id) => {
+                    const item = visible.find((row) => row.id === id);
+                    if (item) setSelected(item);
+                  }}
+                  pins={visible
+                    .filter((item) => item.lat != null && item.lng != null)
+                    .filter((item) => {
+                      if (!radiusKm || originLat == null || originLng == null || item.lat == null || item.lng == null) return true;
+                      return distanceKm({ lat: originLat, lng: originLng }, { lat: item.lat, lng: item.lng }) <= radiusKm;
+                    })
+                    .map((item) => ({
+                      id: item.id,
+                      title: item.title,
+                      price: naira(item.price),
+                      lat: item.lat as number,
+                      lng: item.lng as number,
+                      label: item.area || item.city,
+                    }))}
+                />
               ) : (
                 <div className="grid-2">
                   {visible
                     .filter((item) => {
-                      const lat = dash?.profile.lat;
-                      const lng = dash?.profile.lng;
-                      if (!radiusKm || lat == null || lng == null || item.lat == null || item.lng == null) return true;
-                      return distanceKm({ lat, lng }, { lat: item.lat, lng: item.lng }) <= radiusKm;
+                      if (!radiusKm || originLat == null || originLng == null || item.lat == null || item.lng == null) return true;
+                      return distanceKm({ lat: originLat, lng: originLng }, { lat: item.lat, lng: item.lng }) <= radiusKm;
                     })
                     .sort((a, b) => {
-                      const lat = dash?.profile.lat;
-                      const lng = dash?.profile.lng;
-                      if (lat == null || lng == null || a.lat == null || b.lat == null || a.lng == null || b.lng == null) return 0;
-                      const origin = { lat, lng };
+                      if (originLat == null || originLng == null || a.lat == null || b.lat == null || a.lng == null || b.lng == null) return 0;
+                      const origin = { lat: originLat, lng: originLng };
                       return distanceKm(origin, { lat: a.lat, lng: a.lng }) - distanceKm(origin, { lat: b.lat, lng: b.lng });
                     })
                     .map((item) => {
-                      const lat = dash?.profile.lat;
-                      const lng = dash?.profile.lng;
-                      const km = lat != null && lng != null && item.lat != null && item.lng != null
-                        ? distanceKm({ lat, lng }, { lat: item.lat, lng: item.lng })
+                      const km = originLat != null && originLng != null && item.lat != null && item.lng != null
+                        ? distanceKm({ lat: originLat, lng: originLng }, { lat: item.lat, lng: item.lng })
                         : null;
                       const place = item.area ? `${item.area}, ${item.city}` : item.city;
                       return (

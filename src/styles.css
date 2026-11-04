@@ -1175,6 +1175,50 @@
   width: auto;
 }
 
+.area-map {
+  background: #012115;
+  border-radius: 18px;
+  padding: 8px;
+  margin-top: 8px;
+}
+
+.area-svg {
+  width: 100%;
+  height: auto;
+}
+
+.area-svg rect {
+  fill: #063222;
+  stroke: #c5fb02;
+  stroke-width: 1;
+}
+
+.area-svg text {
+  fill: #e7f6df;
+  font-size: 9px;
+  font-family: inherit;
+}
+
+.area-svg .pin {
+  cursor: pointer;
+}
+
+.area-svg .pin circle {
+  fill: #c5fb02;
+}
+
+.area-svg .you {
+  fill: none;
+  stroke: white;
+  stroke-width: 2;
+}
+
+.view-switch {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+
 .stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
