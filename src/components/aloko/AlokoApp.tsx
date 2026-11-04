@@ -5,6 +5,7 @@ import { activateRole, createListing, decideListing, getDashboard, listLiveListi
 import { ChatDesk } from "@/components/aloko/ChatDesk";
 import { Onboarding } from "@/components/aloko/Onboarding";
 import { Workspace } from "@/components/aloko/Workspace";
+import { distanceKm } from "@/lib/places";
 
 type Kind = "sale" | "giveaway" | "bulk";
 type Tab = "home" | "buy" | "sell" | "messages" | "account";
@@ -30,6 +31,10 @@ type Listing = {
   buyerName?: string;
   negotiated?: boolean;
   soldAt?: string | null;
+  area?: string;
+  state?: string;
+  lat?: number | null;
+  lng?: number | null;
 };
 
 const CATEGORIES = [
@@ -325,24 +330,69 @@ function fromRow(row: AlokoRow): Listing {
     buyerName: row.buyerName,
     negotiated: row.negotiated,
     soldAt: row.soldAt,
+    area: row.area,
+    state: row.state,
+    lat: row.lat,
+    lng: row.lng,
   };
 }
 
 function SignInPanel({ onDone }: { onDone: () => void }) {
-  const [mode, setMode] = useState<"in" | "up">("up");
+  const [mode, setMode] = useState<"welcome" | "in" | "up" | "verify">("welcome");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [display, setDisplay] = useState("");
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
+  if (mode === "welcome") {
+    return (
+      <div className="sheet">
+        <h2>Sell it. Give it. Pass it on.</h2>
+        <p className="type-lead">Discover great finds, sell things you no longer need, and give your belongings a second life.</p>
+        <div className="form">
+          <button className="primary" type="button" onClick={() => setMode("up")}>Create an account</button>
+          <button className="ghost" type="button" onClick={() => setMode("in")}>Sign in</button>
+          {GROK_PROVIDERS.map((provider) => (
+            <button key={provider.providerId} className="ghost" type="button" onClick={() => signIn(provider.providerId, { callbackURL: "/" })}>
+              Continue with {provider.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === "verify") {
+    return (
+      <div className="sheet">
+        <h2>Verify your account</h2>
+        <p className="type-lead">Email delivery is not connected yet, so there is no code to enter. You can keep going. Phone checks come later, only when a listing or a service needs more trust.</p>
+        <button className="primary" type="button" onClick={onDone}>Continue</button>
+        <button className="ghost" type="button" onClick={() => setMode("up")}>Change email address</button>
+      </div>
+    );
+  }
+
   return (
     <form
-      className="form"
+      className="sheet form"
       onSubmit={(event) => {
         event.preventDefault();
-        setBusy(true);
         setError("");
+        if (mode === "up") {
+          if (password !== confirm) {
+            setError("The passwords do not match.");
+            return;
+          }
+          if (!agreed) {
+            setError("Agree to the terms to create an account.");
+            return;
+          }
+        }
+        setBusy(true);
         const run =
           mode === "up"
             ? authClient.signUp.email({ email, password, name: display.trim() || "Aloko member", callbackURL: "/" })
@@ -350,39 +400,53 @@ function SignInPanel({ onDone }: { onDone: () => void }) {
         void run
           .then((result) => {
             if (result.error) throw new Error(result.error.message || "Could not sign in.");
-            onDone();
+            if (mode === "up") setMode("verify");
+            else onDone();
           })
           .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not sign in."))
           .finally(() => setBusy(false));
       }}
     >
-      <p className="auth-note">One account can buy, sell, or offer a decluttering service.</p>
+      <h2>{mode === "up" ? "Create your account" : "Sign in"}</h2>
       {mode === "up" && (
         <label>
-          Name
-          <input value={display} onChange={(event) => setDisplay(event.target.value)} autoComplete="name" />
+          Full name
+          <input value={display} onChange={(event) => setDisplay(event.target.value)} autoComplete="name" required />
         </label>
       )}
       <label>
-        Email
+        Email address
         <input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" />
       </label>
       <label>
         Password
         <input type="password" required minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "up" ? "new-password" : "current-password"} />
       </label>
+      {mode === "up" && (
+        <label>
+          Confirm password
+          <input type="password" required minLength={8} value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" />
+        </label>
+      )}
+      {mode === "up" && (
+        <label className="check">
+          <input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} />
+          I agree to the Terms and Privacy Policy
+        </label>
+      )}
       {error && <p className="err">{error}</p>}
       <button className="primary" type="submit" disabled={busy}>
         {busy ? "Please wait…" : mode === "up" ? "Create account" : "Sign in"}
       </button>
-      <button className="ghost" type="button" onClick={() => setMode(mode === "up" ? "in" : "up")}>
-        {mode === "up" ? "I already have an account" : "New here? Create an account"}
+      {mode === "up" &&
+        GROK_PROVIDERS.map((provider) => (
+          <button key={provider.providerId} className="ghost" type="button" onClick={() => signIn(provider.providerId, { callbackURL: "/" })}>
+            Continue with {provider.label}
+          </button>
+        ))}
+      <button className="ghost" type="button" onClick={() => setMode(mode === "up" ? "in" : "welcome")}>
+        {mode === "up" ? "I already have an account" : "Back"}
       </button>
-      {GROK_PROVIDERS.map((provider) => (
-        <button key={provider.providerId} className="ghost" type="button" onClick={() => signIn(provider.providerId, { callbackURL: "/" })}>
-          Continue with {provider.label}
-        </button>
-      ))}
     </form>
   );
 }
@@ -477,6 +541,7 @@ export function AlokoApp() {
   const [desk, setDesk] = useState(false);
   const [pricing, setPricing] = useState(false);
   const [dash, setDash] = useState<DashboardData | null>(null);
+  const [radiusKm, setRadiusKm] = useState(0);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -515,6 +580,7 @@ export function AlokoApp() {
         if (data.profile.serviceArea) setServiceArea(data.profile.serviceArea);
         setMine(data.listings.map(fromRow));
         setSaved(data.saves);
+        setRadiusKm(data.profile.radiusKm);
       })
       .catch(() => {});
   };
@@ -870,11 +936,43 @@ export function AlokoApp() {
           {!desk && tab === "buy" && (
             <div className="sheet">
               <h2>{kind === "giveaway" ? "Giveaways" : kind === "bulk" ? "Bulk deals" : category === "All" ? "Browse listings" : category}</h2>
+              <label className="form">
+                How far
+                <select aria-label="Distance" value={radiusKm} onChange={(event) => setRadiusKm(Number(event.target.value))}>
+                  <option value={0}>Anywhere in Nigeria</option>
+                  <option value={5}>Within 5 km</option>
+                  <option value={10}>Within 10 km</option>
+                  <option value={25}>Within 25 km</option>
+                  <option value={50}>Within 50 km</option>
+                  <option value={100}>Within 100 km</option>
+                </select>
+              </label>
               {visible.length === 0 ? (
                 <p className="empty">No listings in this filter. Change city, category, or search.</p>
               ) : (
                 <div className="grid-2">
-                  {visible.map((item) => (
+                  {visible
+                    .filter((item) => {
+                      const lat = dash?.profile.lat;
+                      const lng = dash?.profile.lng;
+                      if (!radiusKm || lat == null || lng == null || item.lat == null || item.lng == null) return true;
+                      return distanceKm({ lat, lng }, { lat: item.lat, lng: item.lng }) <= radiusKm;
+                    })
+                    .sort((a, b) => {
+                      const lat = dash?.profile.lat;
+                      const lng = dash?.profile.lng;
+                      if (lat == null || lng == null || a.lat == null || b.lat == null || a.lng == null || b.lng == null) return 0;
+                      const origin = { lat, lng };
+                      return distanceKm(origin, { lat: a.lat, lng: a.lng }) - distanceKm(origin, { lat: b.lat, lng: b.lng });
+                    })
+                    .map((item) => {
+                      const lat = dash?.profile.lat;
+                      const lng = dash?.profile.lng;
+                      const km = lat != null && lng != null && item.lat != null && item.lng != null
+                        ? distanceKm({ lat, lng }, { lat: item.lat, lng: item.lng })
+                        : null;
+                      const place = item.area ? `${item.area}, ${item.city}` : item.city;
+                      return (
                     <button key={item.id} className="grid-card" type="button" onClick={() => setSelected(item)}>
                       <img src={item.image} alt="" />
                       <div className="listing-copy">
@@ -882,12 +980,13 @@ export function AlokoApp() {
                         <b>{naira(item.price)}</b>
                         <span className="place">
                           <Icon name="pin" />
-                          {item.city}
+                          {place}{km != null ? ` · ~${km} km` : ""}
                         </span>
                       </div>
                       {item.verified && <span className="verified">✓</span>}
                     </button>
-                  ))}
+                      );
+                    })}
                 </div>
               )}
             </div>
@@ -1002,12 +1101,16 @@ export function AlokoApp() {
             isPending ? (
               <div className="sheet"><p className="auth-note">Checking your account…</p></div>
             ) : !user || !dash ? (
-              <div className="sheet">
-                <h2>Account</h2>
-                <SignInPanel onDone={() => setToast("Signed in. Choose how you use Aloko.")} />
-              </div>
+              <SignInPanel onDone={() => setToast("Signed in. Choose how you use Aloko.")} />
             ) : !dash.profile.onboarded ? (
-              <Onboarding onDone={() => { reloadListings(); setToast("You're set."); }} onError={(message) => setToast(message)} />
+              <Onboarding
+                onDone={(role) => {
+                  reloadListings();
+                  setToast("You're in.");
+                  setTab(role === "buyer" ? "home" : "account");
+                }}
+                onError={(message) => setToast(message)}
+              />
             ) : (
               <Workspace
                 data={dash}

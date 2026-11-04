@@ -1164,6 +1164,17 @@
   border-color: var(--color-lime-deep);
 }
 
+.check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.check input {
+  width: auto;
+}
+
 .stats {
   display: grid;
   grid-template-columns: 1fr 1fr;

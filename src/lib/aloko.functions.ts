@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { placeFor } from "@/lib/places";
 
 const ALL_ROLES = ["buyer", "individual", "business", "service", "moderator", "super_admin"] as const;
 const PUBLIC_ROLES = ["buyer", "individual", "business", "service"] as const;
@@ -33,6 +34,12 @@ export type AlokoProfile = {
   email: string;
   onboarded: boolean;
   wallpaper: string;
+  state: string;
+  area: string;
+  lat: number | null;
+  lng: number | null;
+  radiusKm: number;
+  coverage: string;
 };
 
 export type AlokoRow = {
@@ -54,6 +61,10 @@ export type AlokoRow = {
   buyerName: string;
   negotiated: boolean;
   soldAt: string | null;
+  area: string;
+  state: string;
+  lat: number | null;
+  lng: number | null;
 };
 
 export type ServiceRow = {
@@ -121,6 +132,10 @@ type ListingSql = {
   sold_price: number | null;
   buyer_name: string;
   negotiated: boolean;
+  area: string;
+  state: string;
+  lat: number | null;
+  lng: number | null;
 };
 
 function text(value: unknown, max: number) {
@@ -155,6 +170,10 @@ function toRow(row: ListingSql): AlokoRow {
     buyerName: row.buyer_name ?? "",
     negotiated: Boolean(row.negotiated),
     soldAt: row.sold_at,
+    area: row.area ?? "",
+    state: row.state ?? "",
+    lat: row.lat,
+    lng: row.lng,
   };
 }
 
@@ -201,8 +220,14 @@ async function profileOf(sql: Sql, userId: string): Promise<AlokoProfile> {
     suspended: boolean;
     onboarded: boolean;
     wallpaper: string;
+    state: string;
+    area: string;
+    lat: number | null;
+    lng: number | null;
+    radius_km: number;
+    coverage: string;
   }>`
-    select display_name, account_type, service_area, business_name, city, interests, verification, cac_ref, suspended, onboarded, wallpaper
+    select display_name, account_type, service_area, business_name, city, interests, verification, cac_ref, suspended, onboarded, wallpaper, state, area, lat, lng, radius_km, coverage
     from aloko_profiles where user_id = ${userId}
   `;
   const row = rows[0];
@@ -228,13 +253,19 @@ async function profileOf(sql: Sql, userId: string): Promise<AlokoProfile> {
     email,
     onboarded: Boolean(row?.onboarded),
     wallpaper: row?.wallpaper || "mint",
+    state: row?.state ?? "",
+    area: row?.area ?? "",
+    lat: row?.lat ?? null,
+    lng: row?.lng ?? null,
+    radiusKm: row?.radius_km ?? 0,
+    coverage: row?.coverage || "city",
   };
 }
 
 export const listLiveListings = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await getSql();
   const rows = await sql<ListingSql>`
-    select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated
+    select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng
     from aloko_listings
     where status = 'active' and paused = false and sold_at is null
     order by created_at desc
@@ -250,7 +281,7 @@ export const getDashboard = createServerFn({ method: "GET" })
     const profile = await profileOf(sql, context.userId);
     const listings = (
       await sql<ListingSql>`
-        select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated
+        select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng
         from aloko_listings where user_id = ${context.userId} order by created_at desc limit 40
       `
     ).map(toRow);
@@ -296,7 +327,7 @@ export const getDashboard = createServerFn({ method: "GET" })
     if (isStaff(profile.roles)) {
       queue = (
         await sql<ListingSql>`
-          select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated
+          select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng
           from aloko_listings where status = 'pending' order by created_at desc limit 40
         `
       ).map(toRow);
@@ -432,6 +463,17 @@ export const createListing = createServerFn({ method: "POST" })
       ) values (
         ${id}, ${context.userId}, ${data.title}, ${data.description}, ${data.price}, ${data.city}, ${data.category}, ${data.kind}, ${data.image}, 'pending', ${data.seller}, ${code}, ${stock}
       )
+    `;
+    const profiles = await sql<{ area: string; coverage: string }>`select area, coverage from aloko_profiles where user_id = ${context.userId}`;
+    const spot = placeFor(data.city, profiles[0]?.area ?? "");
+    await sql`
+      update aloko_listings set
+        area = ${spot?.area ?? ""},
+        state = ${spot?.state ?? ""},
+        lat = ${spot?.lat ?? null},
+        lng = ${spot?.lng ?? null},
+        coverage = ${profiles[0]?.coverage || "city"}
+      where id = ${id}
     `;
     return { id, productCode: code };
   });
@@ -810,36 +852,48 @@ export const saveWallpaper = createServerFn({ method: "POST" })
 
 export const finishOnboarding = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: { role: string; city: string; interests: string; businessName: string; serviceArea: string }) => {
+  .validator((input: { role: string; city: string; state: string; area: string; interests: string; businessName: string; serviceArea: string; radiusKm: number; coverage: string }) => {
     const role = text(input?.role, 40);
-    if (!(PUBLIC_ROLES as readonly string[]).includes(role)) throw new Error("Choose Buyer, Individual Seller, Business Seller, or Decluttering Service.");
+    if (!(PUBLIC_ROLES as readonly string[]).includes(role)) throw new Error("Choose how you want to use Aloko.");
+    const radius = [0, 5, 10, 25, 50, 100].includes(Number(input?.radiusKm)) ? Number(input.radiusKm) : 0;
+    const coverage = ["neighbourhood", "city", "state", "nationwide"].includes(input?.coverage) ? input.coverage : "city";
     return {
       role: role as (typeof PUBLIC_ROLES)[number],
       city: text(input?.city, 40),
+      state: text(input?.state, 40),
+      area: text(input?.area, 40),
       interests: text(input?.interests, 120),
       businessName: text(input?.businessName, 80),
       serviceArea: text(input?.serviceArea, 80),
+      radiusKm: radius,
+      coverage,
     };
   })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     await assertLive(sql, context.userId);
     await profileOf(sql, context.userId);
-    if (!data.city) throw new Error("Choose your city.");
     if (data.role === "business" && data.businessName.length < 2) throw new Error("Add the business name.");
     if (data.role === "service" && data.serviceArea.length < 2) throw new Error("Add where you work.");
+    const spot = data.city ? placeFor(data.city, data.area) : undefined;
     await sql`insert into aloko_memberships (user_id, role) values (${context.userId}, ${data.role}) on conflict do nothing`;
     await sql`
       update aloko_profiles set
         account_type = ${data.role},
         city = ${data.city},
+        state = ${spot?.state ?? data.state},
+        area = ${spot?.area ?? ""},
+        lat = ${spot?.lat ?? null},
+        lng = ${spot?.lng ?? null},
         interests = ${data.interests},
         business_name = ${data.businessName},
-        service_area = ${data.serviceArea},
+        service_area = ${data.serviceArea || data.area},
+        radius_km = ${data.radiusKm},
+        coverage = ${data.coverage},
         onboarded = true,
         updated_at = now()
       where user_id = ${context.userId}
     `;
-    return { ok: true };
+    return { role: data.role };
   });
 
