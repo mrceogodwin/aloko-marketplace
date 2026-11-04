@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { UserButton } from "@/lib/auth/gates";
+import { SaleRecord } from "@/components/aloko/ChatDesk";
 import {
   activateRole,
   createService,
@@ -224,6 +225,7 @@ export function Workspace({
 }
 
 function ListingList({ listings, onRefresh, onError }: { listings: DashboardData["listings"]; onRefresh: () => void; onError: (message: string) => void }) {
+  const [sale, setSale] = useState<DashboardData["listings"][number] | null>(null);
   const run = (work: Promise<unknown>) => {
     void work.then(onRefresh).catch((err: unknown) => onError(err instanceof Error ? err.message : "That did not save."));
   };
@@ -234,8 +236,15 @@ function ListingList({ listings, onRefresh, onError }: { listings: DashboardData
         <article key={item.id} className="queue-card">
           <img src={item.image} alt="" />
           <div>
-            <strong>{item.title}</strong>
-            <span>{item.productCode || "Pending code"} · {item.sold ? "Sold" : item.status}{item.paused && !item.sold ? " · Paused" : ""} · stock {item.stock}</span>
+            <button className="linkish" type="button" onClick={() => item.sold && setSale(item)}>
+              <strong>{item.title} {item.negotiated ? <i className="neg-ico">N</i> : null}</strong>
+            </button>
+            <span>
+              {item.productCode || "Pending code"} · {item.sold ? "Sold" : item.status}
+              {item.sold && item.soldPrice != null && item.soldPrice !== item.price ? <s> ₦{item.price.toLocaleString("en-NG")}</s> : null}
+              {item.sold && item.soldPrice != null ? ` ₦${item.soldPrice.toLocaleString("en-NG")}` : ""}
+              {item.paused && !item.sold ? " · Paused" : ""} · stock {item.stock}
+            </span>
             {!item.sold && item.status !== "rejected" && (
               <div className="queue-actions">
                 <button className="ghost" type="button" onClick={() => run(setListingState({ data: { id: item.id, action: item.paused ? "resume" : "pause" } }))}>{item.paused ? "Resume" : "Pause"}</button>
@@ -245,6 +254,20 @@ function ListingList({ listings, onRefresh, onError }: { listings: DashboardData
           </div>
         </article>
       ))}
+      {sale ? (
+        <SaleRecord
+          title={sale.title}
+          asking={sale.price}
+          soldPrice={sale.soldPrice}
+          negotiated={sale.negotiated}
+          buyerName={sale.buyerName}
+          soldAt={sale.soldAt}
+          city={sale.city}
+          myStars={0}
+          theirStars={0}
+          onClose={() => setSale(null)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -31,6 +31,8 @@ export type AlokoProfile = {
   cacRef: string;
   suspended: boolean;
   email: string;
+  onboarded: boolean;
+  wallpaper: string;
 };
 
 export type AlokoRow = {
@@ -48,6 +50,10 @@ export type AlokoRow = {
   paused: boolean;
   sold: boolean;
   stock: number;
+  soldPrice: number | null;
+  buyerName: string;
+  negotiated: boolean;
+  soldAt: string | null;
 };
 
 export type ServiceRow = {
@@ -59,7 +65,19 @@ export type ServiceRow = {
   status: "pending" | "active" | "rejected";
 };
 
-export type ThreadRow = { id: string; productCode: string; listingTitle: string; lastBody: string };
+export type ThreadRow = {
+  id: string;
+  productCode: string;
+  listingTitle: string;
+  lastBody: string;
+  listingId: string;
+  asking: number;
+  soldPrice: number | null;
+  soldAt: string | null;
+  negotiated: boolean;
+  buyerName: string;
+  city: string;
+};
 export type PersonRow = {
   id: string;
   name: string;
@@ -100,6 +118,9 @@ type ListingSql = {
   paused: boolean;
   sold_at: string | null;
   stock: number;
+  sold_price: number | null;
+  buyer_name: string;
+  negotiated: boolean;
 };
 
 function text(value: unknown, max: number) {
@@ -130,6 +151,10 @@ function toRow(row: ListingSql): AlokoRow {
     paused: Boolean(row.paused),
     sold: Boolean(row.sold_at),
     stock: row.stock || 1,
+    soldPrice: row.sold_price,
+    buyerName: row.buyer_name ?? "",
+    negotiated: Boolean(row.negotiated),
+    soldAt: row.sold_at,
   };
 }
 
@@ -174,8 +199,10 @@ async function profileOf(sql: Sql, userId: string): Promise<AlokoProfile> {
     verification: string;
     cac_ref: string;
     suspended: boolean;
+    onboarded: boolean;
+    wallpaper: string;
   }>`
-    select display_name, account_type, service_area, business_name, city, interests, verification, cac_ref, suspended
+    select display_name, account_type, service_area, business_name, city, interests, verification, cac_ref, suspended, onboarded, wallpaper
     from aloko_profiles where user_id = ${userId}
   `;
   const row = rows[0];
@@ -199,13 +226,15 @@ async function profileOf(sql: Sql, userId: string): Promise<AlokoProfile> {
     cacRef: row?.cac_ref ?? "",
     suspended: Boolean(row?.suspended),
     email,
+    onboarded: Boolean(row?.onboarded),
+    wallpaper: row?.wallpaper || "mint",
   };
 }
 
 export const listLiveListings = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await getSql();
   const rows = await sql<ListingSql>`
-    select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock
+    select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated
     from aloko_listings
     where status = 'active' and paused = false and sold_at is null
     order by created_at desc
@@ -221,7 +250,7 @@ export const getDashboard = createServerFn({ method: "GET" })
     const profile = await profileOf(sql, context.userId);
     const listings = (
       await sql<ListingSql>`
-        select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock
+        select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated
         from aloko_listings where user_id = ${context.userId} order by created_at desc limit 40
       `
     ).map(toRow);
@@ -240,7 +269,14 @@ export const getDashboard = createServerFn({ method: "GET" })
     }));
     const threads = await sql<ThreadRow>`
       select t.id, t.product_code as "productCode", coalesce(l.title, t.product_code) as "listingTitle",
-        coalesce((select body from aloko_messages m where m.thread_id = t.id order by m.created_at desc limit 1), '') as "lastBody"
+        coalesce((select body from aloko_messages m where m.thread_id = t.id order by m.created_at desc limit 1), '') as "lastBody",
+        t.listing_id as "listingId",
+        coalesce(l.price_naira, 0) as asking,
+        l.sold_price as "soldPrice",
+        l.sold_at as "soldAt",
+        coalesce(l.negotiated, false) as negotiated,
+        coalesce(l.buyer_name, '') as "buyerName",
+        coalesce(l.city, '') as city
       from aloko_threads t
       left join aloko_listings l on l.id = t.listing_id
       where t.buyer_id = ${context.userId} or t.seller_id = ${context.userId}
@@ -260,7 +296,7 @@ export const getDashboard = createServerFn({ method: "GET" })
     if (isStaff(profile.roles)) {
       queue = (
         await sql<ListingSql>`
-          select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock
+          select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated
           from aloko_listings where status = 'pending' order by created_at desc limit 40
         `
       ).map(toRow);
@@ -413,7 +449,8 @@ export const setListingState = createServerFn({ method: "POST" })
     await assertLive(sql, context.userId);
     if (data.action === "sold") {
       const rows = await sql<{ id: string }>`
-        update aloko_listings set sold_at = now(), paused = true where id = ${data.id} and user_id = ${context.userId} and sold_at is null returning id
+        update aloko_listings set sold_at = now(), paused = true, sold_price = price_naira, negotiated = false
+        where id = ${data.id} and user_id = ${context.userId} and sold_at is null returning id
       `;
       if (!rows[0]) throw new Error("That listing is already sold or not yours.");
     } else {
@@ -613,3 +650,196 @@ export const grantModerator = createServerFn({ method: "POST" })
     await audit(sql, context.userId, "grant-moderator", data);
     return { ok: true };
   });
+
+const WALLS = ["mint", "ink", "forest", "story"] as const;
+
+export type ChatView = {
+  id: string;
+  productCode: string;
+  title: string;
+  asking: number;
+  soldPrice: number | null;
+  soldAt: string | null;
+  city: string;
+  buyerName: string;
+  negotiated: boolean;
+  iAmSeller: boolean;
+  messages: { id: string; mine: boolean; body: string }[];
+  offers: { id: string; amount: number; status: string }[];
+  myStars: number;
+  theirStars: number;
+};
+
+async function threadFor(sql: Sql, threadId: string, userId: string) {
+  const rows = await sql<{ id: string; listing_id: string; product_code: string; buyer_id: string; seller_id: string }>`
+    select id, listing_id, product_code, buyer_id, seller_id from aloko_threads where id = ${threadId}
+  `;
+  const thread = rows[0];
+  if (!thread || (thread.buyer_id !== userId && thread.seller_id !== userId)) throw new Error("That chat is not yours.");
+  return thread;
+}
+
+export const getChat = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((id: string) => text(id, 80))
+  .handler(async ({ context, data }): Promise<ChatView> => {
+    const sql = await getSql();
+    const thread = await threadFor(sql, data, context.userId);
+    const listings = await sql<{ title: string; price_naira: number; sold_price: number | null; sold_at: string | null; city: string; buyer_name: string; negotiated: boolean }>`
+      select title, price_naira, sold_price, sold_at, city, buyer_name, negotiated from aloko_listings where id = ${thread.listing_id}
+    `;
+    const listing = listings[0];
+    const messages = await sql<{ id: string; sender_id: string; body: string }>`
+      select id, sender_id, body from aloko_messages where thread_id = ${thread.id} order by created_at asc limit 50
+    `;
+    const offers = await sql<{ id: string; amount: number; status: string }>`
+      select id, amount, status from aloko_offers where thread_id = ${thread.id} order by created_at asc
+    `;
+    const ratings = await sql<{ rater_id: string; stars: number }>`
+      select rater_id, stars from aloko_ratings where thread_id = ${thread.id}
+    `;
+    const other = thread.buyer_id === context.userId ? thread.seller_id : thread.buyer_id;
+    return {
+      id: thread.id,
+      productCode: thread.product_code,
+      title: listing?.title ?? thread.product_code,
+      asking: listing?.price_naira ?? 0,
+      soldPrice: listing?.sold_price ?? null,
+      soldAt: listing?.sold_at ?? null,
+      city: listing?.city ?? "",
+      buyerName: listing?.buyer_name ?? "",
+      negotiated: Boolean(listing?.negotiated),
+      iAmSeller: thread.seller_id === context.userId,
+      messages: messages.map((item) => ({ id: item.id, mine: item.sender_id === context.userId, body: item.body })),
+      offers,
+      myStars: ratings.find((item) => item.rater_id === context.userId)?.stars ?? 0,
+      theirStars: ratings.find((item) => item.rater_id === other)?.stars ?? 0,
+    };
+  });
+
+export const sendOffer = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { threadId: string; amount: number }) => ({
+    threadId: text(input?.threadId, 80),
+    amount: Math.round(Number(input?.amount)),
+  }))
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    await assertLive(sql, context.userId);
+    const thread = await threadFor(sql, data.threadId, context.userId);
+    if (thread.buyer_id !== context.userId) throw new Error("Only the buyer can make an offer.");
+    const listings = await sql<{ price_naira: number; sold_at: string | null }>`
+      select price_naira, sold_at from aloko_listings where id = ${thread.listing_id}
+    `;
+    const listing = listings[0];
+    if (!listing || listing.sold_at) throw new Error("That item is already sold.");
+    if (!Number.isFinite(data.amount) || data.amount < 1 || data.amount >= listing.price_naira) {
+      throw new Error("Offer less than the asking price.");
+    }
+    const id = crypto.randomUUID();
+    await sql`
+      insert into aloko_offers (id, thread_id, listing_id, buyer_id, amount) values (${id}, ${thread.id}, ${thread.listing_id}, ${context.userId}, ${data.amount})
+    `;
+    await sql`
+      insert into aloko_messages (id, thread_id, sender_id, body) values (${crypto.randomUUID()}, ${thread.id}, ${context.userId}, ${"Offer ₦" + data.amount.toLocaleString("en-NG")})
+    `;
+    return { id };
+  });
+
+export const acceptOffer = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((offerId: string) => text(offerId, 80))
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    await assertLive(sql, context.userId);
+    const offers = await sql<{ id: string; thread_id: string; listing_id: string; buyer_id: string; amount: number; status: string }>`
+      select id, thread_id, listing_id, buyer_id, amount, status from aloko_offers where id = ${data}
+    `;
+    const offer = offers[0];
+    if (!offer || offer.status !== "open") throw new Error("That offer is not open.");
+    const thread = await threadFor(sql, offer.thread_id, context.userId);
+    if (thread.seller_id !== context.userId) throw new Error("Only the seller can accept an offer.");
+    const buyers = await sql<{ name: string }>`select name from "user" where id = ${offer.buyer_id}`;
+    const buyerName = buyers[0]?.name || "Buyer";
+    const updated = await sql<{ id: string }>`
+      update aloko_listings
+      set sold_at = now(), paused = true, sold_price = ${offer.amount}, buyer_id = ${offer.buyer_id}, buyer_name = ${buyerName}, negotiated = true
+      where id = ${offer.listing_id} and sold_at is null
+      returning id
+    `;
+    if (!updated[0]) throw new Error("That item is already sold.");
+    await sql`update aloko_offers set status = 'accepted' where id = ${offer.id}`;
+    await sql`update aloko_offers set status = 'declined' where thread_id = ${offer.thread_id} and id <> ${offer.id} and status = 'open'`;
+    await sql`
+      insert into aloko_messages (id, thread_id, sender_id, body)
+      values (${crypto.randomUUID()}, ${offer.thread_id}, ${context.userId}, ${"Accepted ₦" + offer.amount.toLocaleString("en-NG")})
+    `;
+    return { ok: true };
+  });
+
+export const rateChat = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { threadId: string; stars: number }) => {
+    const stars = Math.round(Number(input?.stars));
+    if (stars < 1 || stars > 5) throw new Error("Choose 1 to 5 stars.");
+    return { threadId: text(input?.threadId, 80), stars };
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    await threadFor(sql, data.threadId, context.userId);
+    await sql`
+      insert into aloko_ratings (thread_id, rater_id, stars) values (${data.threadId}, ${context.userId}, ${data.stars})
+      on conflict (thread_id, rater_id) do update set stars = excluded.stars
+    `;
+    return { ok: true };
+  });
+
+export const saveWallpaper = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((wall: string) => {
+    const next = text(wall, 20);
+    if (!(WALLS as readonly string[]).includes(next)) throw new Error("Choose one of the four wallpapers.");
+    return next;
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    await profileOf(sql, context.userId);
+    await sql`update aloko_profiles set wallpaper = ${data} where user_id = ${context.userId}`;
+    return { wallpaper: data };
+  });
+
+export const finishOnboarding = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { role: string; city: string; interests: string; businessName: string; serviceArea: string }) => {
+    const role = text(input?.role, 40);
+    if (!(PUBLIC_ROLES as readonly string[]).includes(role)) throw new Error("Choose Buyer, Individual Seller, Business Seller, or Decluttering Service.");
+    return {
+      role: role as (typeof PUBLIC_ROLES)[number],
+      city: text(input?.city, 40),
+      interests: text(input?.interests, 120),
+      businessName: text(input?.businessName, 80),
+      serviceArea: text(input?.serviceArea, 80),
+    };
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    await assertLive(sql, context.userId);
+    await profileOf(sql, context.userId);
+    if (!data.city) throw new Error("Choose your city.");
+    if (data.role === "business" && data.businessName.length < 2) throw new Error("Add the business name.");
+    if (data.role === "service" && data.serviceArea.length < 2) throw new Error("Add where you work.");
+    await sql`insert into aloko_memberships (user_id, role) values (${context.userId}, ${data.role}) on conflict do nothing`;
+    await sql`
+      update aloko_profiles set
+        account_type = ${data.role},
+        city = ${data.city},
+        interests = ${data.interests},
+        business_name = ${data.businessName},
+        service_area = ${data.serviceArea},
+        onboarded = true,
+        updated_at = now()
+      where user_id = ${context.userId}
+    `;
+    return { ok: true };
+  });
+

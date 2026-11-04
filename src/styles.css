@@ -1080,6 +1080,90 @@
   line-height: 1.45;
 }
 
+.wall-pick {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.wall {
+  width: 46px;
+  height: 68px;
+  padding: 0;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  overflow: hidden;
+}
+
+.wall.on {
+  border-color: var(--color-ink);
+}
+
+.wall img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.chat-stage {
+  border-radius: 16px;
+  background-size: cover;
+  background-position: center;
+  padding: 12px;
+  min-height: 280px;
+}
+
+.chat-title {
+  margin: 4px 0;
+  background: #ffffffd8;
+  display: inline-block;
+  border-radius: 8px;
+  padding: 2px 6px;
+}
+
+.price-pair s {
+  color: var(--color-muted);
+  margin-right: 6px;
+}
+
+.neg-ico {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: var(--color-ink);
+  color: var(--color-lime);
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
+.offer-row,
+.star-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.star {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--color-line);
+  background: white;
+  font-weight: 800;
+}
+
+.star.on {
+  background: var(--color-lime);
+  border-color: var(--color-lime-deep);
+}
+
 .stats {
   display: grid;
   grid-template-columns: 1fr 1fr;

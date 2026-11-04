@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { GROK_PROVIDERS, authClient, signIn } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { activateRole, createListing, decideListing, getDashboard, listLiveListings, openThread, recordView, toggleSave, type AlokoRole, type AlokoRow, type DashboardData } from "@/lib/aloko.functions";
+import { ChatDesk } from "@/components/aloko/ChatDesk";
+import { Onboarding } from "@/components/aloko/Onboarding";
 import { Workspace } from "@/components/aloko/Workspace";
 
 type Kind = "sale" | "giveaway" | "bulk";
@@ -24,6 +26,10 @@ type Listing = {
   paused?: boolean;
   sold?: boolean;
   stock?: number;
+  soldPrice?: number | null;
+  buyerName?: string;
+  negotiated?: boolean;
+  soldAt?: string | null;
 };
 
 const CATEGORIES = [
@@ -315,6 +321,10 @@ function fromRow(row: AlokoRow): Listing {
     paused: row.paused,
     sold: row.sold,
     stock: row.stock,
+    soldPrice: row.soldPrice,
+    buyerName: row.buyerName,
+    negotiated: row.negotiated,
+    soldAt: row.soldAt,
   };
 }
 
@@ -978,22 +988,14 @@ export function AlokoApp() {
           )}
 
           {!desk && tab === "messages" && (
-            <div className="sheet">
-              <h2>Messages</h2>
-              {!user ? (
+            !user ? (
+              <div className="sheet">
+                <h2>Messages</h2>
                 <p className="type-lead">Sign in to message a seller about a product.</p>
-              ) : (dash?.threads.length ?? 0) === 0 ? (
-                <p className="type-lead">No messages yet. Open a live listing and message the seller. The chat keeps that product’s ID.</p>
-              ) : (
-                dash?.threads.map((item) => (
-                  <button key={item.id} className="thread" type="button" onClick={() => setToast(`${item.productCode}: ${item.lastBody}`)}>
-                    <strong>{item.productCode}</strong>
-                    <span>{item.listingTitle}</span>
-                    <small>{item.lastBody}</small>
-                  </button>
-                ))
-              )}
-            </div>
+              </div>
+            ) : (
+              <ChatDesk threads={dash?.threads ?? []} wallpaper={dash?.profile.wallpaper ?? "mint"} onRefresh={reloadListings} onError={(message) => setToast(message)} />
+            )
           )}
 
           {!desk && tab === "account" && (
@@ -1004,6 +1006,8 @@ export function AlokoApp() {
                 <h2>Account</h2>
                 <SignInPanel onDone={() => setToast("Signed in. Choose how you use Aloko.")} />
               </div>
+            ) : !dash.profile.onboarded ? (
+              <Onboarding onDone={() => { reloadListings(); setToast("You're set."); }} onError={(message) => setToast(message)} />
             ) : (
               <Workspace
                 data={dash}
