@@ -6,6 +6,7 @@ import { ChatDesk } from "@/components/aloko/ChatDesk";
 import { Onboarding } from "@/components/aloko/Onboarding";
 import { Workspace } from "@/components/aloko/Workspace";
 import { ListingMap } from "@/components/aloko/ListingMap";
+import { HomeFeed } from "@/components/aloko/HomeFeed";
 import { distanceKm, nearestPlace, placeFor } from "@/lib/places";
 
 type Kind = "sale" | "giveaway" | "bulk";
@@ -814,6 +815,17 @@ export function AlokoApp() {
               </button>
             </div>
           </div>
+          {visible.some((item) => item.featured) && (
+            <div className="ticker" aria-label="Paid this week">
+              <div className="ticker-track">
+                {[0, 1].map((copy) => (
+                  <span key={copy}>
+                    {visible.filter((item) => item.featured).map((item) => `${item.seller} · ${item.title}`).join("     ·     ")}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="search-row">
             <label className="loc-pill">
               <span className="pin-ico">
@@ -899,148 +911,28 @@ export function AlokoApp() {
               )}
             </div>
           ) : tab === "home" && (
-            <div className="home-fit">
-              <section className="hero" aria-label="Aloko marketplace">
-                <div className="hero-art">
-                  <img src="/aloko/hero.jpg" alt="" />
-                </div>
-                <div className="hero-copy">
-                  <span className="eyebrow">NIGERIA’S REUSE & DECLUTTER MARKETPLACE</span>
-                  <h1>
-                    Find it. Sell it.
-                    <br />
-                    Give it a <em>new home.</em>
-                  </h1>
-                  <div className="hero-actions">
-                    <button className="btn-sell" type="button" onClick={() => setTab("sell")}>
-                      <span>
-                        Start
-                        <br />
-                        Selling
-                      </span>
-                      <span className="arrow">→</span>
-                    </button>
-                    <button className="btn-browse" type="button" onClick={() => openBuy("all", "All")}>
-                      <Icon name="layers" />
-                      <span>
-                        Browse
-                        <br />
-                        Listings
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              </section>
-
-              <div className="cats" role="list">
-                {CATEGORIES.map((item) => (
-                  <button
-                    key={item.id}
-                    className={category === item.id ? "cat on" : "cat"}
-                    type="button"
-                    onClick={() => {
-                      setCategory(item.id);
-                      setKind("all");
-                      setSavedOnly(false);
-                    }}
-                  >
-                    <img src={item.image} alt="" />
-                    {item.id === "Home & Living" ? "Home & Living" : item.id}
-                  </button>
-                ))}
-              </div>
-
-              <div className="promos">
-                <button className="promo dark" type="button" onClick={() => setToast("Decluttering bookings open with a seller message.") }>
-                  <Icon name="truck" />
-                  <b>Book Decluttering Services</b>
-                  <span className="promo-go">→</span>
-                </button>
-                <button className="promo lime" type="button" onClick={() => openBuy("giveaway", "All")}>
-                  <b>Give Away for Free</b>
-                  <span className="promo-go">→</span>
-                </button>
-                <button className="promo pale" type="button" onClick={() => openBuy("bulk", "All")}>
-                  <b>Bulk Deals & Clear-outs</b>
-                  <svg className="boxes" viewBox="0 0 48 32" aria-hidden="true">
-                    <rect x="18" y="4" width="16" height="12" rx="2" fill="#7ed321" />
-                    <rect x="8" y="14" width="18" height="14" rx="2" fill="#123524" />
-                    <rect x="24" y="16" width="18" height="12" rx="2" fill="#c6f135" />
-                  </svg>
-                  <span className="promo-go">→</span>
-                </button>
-              </div>
-
-              <section className="featured">
-                <div className="section-head">
-                  <h2>Featured Listings</h2>
-                  <button className="linkish" type="button" onClick={() => openBuy("all", "All")}>
-                    View More →
-                  </button>
-                </div>
-                {visible.length === 0 ? (
-                  <p className="empty">Nothing matches that search yet. Try another city or clear the filter.</p>
-                ) : (
-                  <div className="h-row">
-                    {visible
-                      .filter((item) => item.kind === "sale")
-                      .slice(0, 8)
-                      .map((item) => (
-                        <article key={item.id} className="listing">
-                          <button className="listing-hit" type="button" onClick={() => setSelected(item)}>
-                            <div className="listing-photo">
-                              <img src={item.image} alt="" />
-                            </div>
-                            <div className="listing-copy">
-                              <strong>{item.title}</strong>
-                              <b>{naira(item.price)}</b>
-                              <span className="place">
-                                <Icon name="pin" />
-                                {item.city}
-                              </span>
-                            </div>
-                          </button>
-                          <button
-                            className={saved.includes(item.id) ? "heart on" : "heart"}
-                            type="button"
-                            aria-label={saved.includes(item.id) ? "Unsave" : "Save"}
-                            onClick={() => toggleSaved(item.id)}
-                          >
-                            <Icon name="heart" />
-                          </button>
-                          {item.verified && <span className="verified">✓</span>}
-                        </article>
-                      ))}
-                  </div>
-                )}
-              </section>
-              {around.length > 0 && (
-                <section className="featured">
-                  <div className="section-head">
-                    <h2>Around {look?.label || "you"}</h2>
-                  </div>
-                  <div className="h-row">
-                    {around.map(({ item, km }) => (
-                      <article key={item.id} className="listing">
-                        <button className="listing-hit" type="button" onClick={() => setSelected(item)}>
-                          <div className="listing-photo">
-                            <img src={item.image} alt="" />
-                          </div>
-                          <div className="listing-copy">
-                            <strong>{item.title}</strong>
-                            <b>{naira(item.price)}</b>
-                            <span className="place">
-                              <Icon name="pin" />
-                              {item.area ? `${item.area}, ${item.city}` : item.city} · ~{km} km
-                            </span>
-                          </div>
-                        </button>
-                      </article>
-                    ))}
-                  </div>
-                </section>
-              )}
-            </div>
+            <HomeFeed
+              items={visible}
+              saved={saved}
+              around={around}
+              onOpen={(id) => {
+                const item = visible.find((row) => row.id === id);
+                if (item) setSelected(item);
+              }}
+              onSave={toggleSaved}
+              onBrowse={openBuy}
+              onSell={() => setTab("sell")}
+              onNear={() => {
+                if (!user) {
+                  setTab("account");
+                  setToast("Sign in to use nearby.");
+                  return;
+                }
+                setAskNear(true);
+                setTab("buy");
+              }}
+              onClearout={() => setToast("Decluttering bookings open with a seller message.")}
+            />
           )}
 
           {!desk && tab === "buy" && (
