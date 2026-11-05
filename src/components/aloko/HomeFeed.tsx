@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 export type HomeItem = {
   id: string;
@@ -20,6 +20,8 @@ export type HomeItem = {
 type Lane = "all" | "sale" | "giveaway" | "bulk" | "service";
 
 const LINES = [
+  { a: "Your app to find", b: "verified sellers." },
+  { a: "Declutter services", b: "just for better." },
   { a: "Give it a", b: "new home." },
   { a: "Declutter service", b: "just got easier." },
   { a: "No more", b: "stressing around." },
@@ -119,7 +121,7 @@ export function HomeFeed({
   services: { id: string; title: string; areas: string; priceNote: string }[];
   ads: { id: string; slot: string; image: string }[];
   onService: (service: { id: string; title: string; areas: string; priceNote: string }) => void;
-  onAdvertise: (slot: "ribbon_top" | "ribbon_mid" | "portrait") => void;
+  onAdvertise: (slot: "ribbon_picks" | "ribbon_drops" | "ribbon_furniture" | "portrait") => void;
 }) {
   const [lane, setLane] = useState<Lane>("all");
   const [tabsOn, setTabsOn] = useState(true);
@@ -350,8 +352,6 @@ export function HomeFeed({
             ))}
           </div>
 
-          <AdSlot ad={ads.find((item) => item.slot === "ribbon_top")} slot="ribbon_top" onAdvertise={onAdvertise} />
-
           <div className="big-cats">
             {CHANNELS.slice(0, 6).map((item) => (
               <button key={item.label} className="big-cat" type="button" onClick={() => onBrowse(item.kind, item.category)}>
@@ -361,26 +361,36 @@ export function HomeFeed({
             ))}
           </div>
 
-          <AdSlot ad={ads.find((item) => item.slot === "ribbon_mid")} slot="ribbon_mid" onAdvertise={onAdvertise} />
-
-          {sections.map((section) => section.id === "services" ? (
-            services.length === 0 ? null : (
-            <section key={section.id} className="featured">
-              <div className="section-head"><h2>{section.title}</h2></div>
-              <div className="h-row">
-                {services.map((service) => (
-                  <button key={service.id} className="service-card" type="button" onClick={() => onService(service)}>
-                    <strong>{service.title}</strong>
-                    <span>{service.areas}</span>
-                    <em>{service.priceNote}</em>
-                  </button>
-                ))}
-              </div>
-            </section>
-            )
-          ) : (
-            <Row key={section.id} title={section.title} items={rowsFor(section.id)} saved={saved} onOpen={onOpen} onSave={onSave} onAll={() => onBrowse(section.id === "free" ? "giveaway" : section.id === "clearout" ? "bulk" : "all", section.id === "wardrobe" ? "Fashion" : section.id === "electronics" ? "Electronics" : section.id === "furniture" ? "Furniture" : section.id === "home" ? "Home & Living" : "All")} />
-          ))}
+          {sections.map((section) => {
+            const slot = section.id === "picks" ? "ribbon_picks" : section.id === "drops" ? "ribbon_drops" : section.id === "furniture" ? "ribbon_furniture" : null;
+            const rows = section.id === "services" ? [] : rowsFor(section.id);
+            if (section.id === "services" ? services.length === 0 : rows.length === 0) return null;
+            const body = section.id === "services" ? (
+              services.length === 0 ? null : (
+              <section key={section.id} className="featured">
+                <div className="section-head"><h2>{section.title}</h2></div>
+                <div className="h-row">
+                  {services.map((service) => (
+                    <button key={service.id} className="service-card" type="button" onClick={() => onService(service)}>
+                      <strong>{service.title}</strong>
+                      <span>{service.areas}</span>
+                      <em>{service.priceNote}</em>
+                    </button>
+                  ))}
+                </div>
+              </section>
+              )
+            ) : (
+              <Row key={section.id} title={section.title} items={rows} saved={saved} onOpen={onOpen} onSave={onSave} onAll={() => onBrowse(section.id === "free" ? "giveaway" : section.id === "clearout" ? "bulk" : "all", section.id === "wardrobe" ? "Fashion" : section.id === "electronics" ? "Electronics" : section.id === "furniture" ? "Furniture" : section.id === "home" ? "Home & Living" : "All")} />
+            );
+            if (!slot) return body;
+            return (
+              <Fragment key={section.id}>
+                <AdSlot ad={ads.find((item) => item.slot === slot)} slot={slot} onAdvertise={onAdvertise} />
+                {body}
+              </Fragment>
+            );
+          })}
           <div className="promos">
             <button className="promo dark" type="button" onClick={onClearout}>
               <b>Book Decluttering Services</b>
@@ -408,18 +418,9 @@ export function HomeFeed({
           </svg>
           Aloko
         </h2>
-        <div className="foot-art" aria-hidden="true">
-          <svg className="cloth" viewBox="0 0 120 90">
-            <path d="M8 18h70l18 54H22z" fill="#163528" stroke="#c6f135" strokeWidth="2" />
-            <path d="M18 28h52M22 40h48M26 52h40M30 64h28" stroke="#9dcc3a" strokeWidth="1.4" />
-            <path d="M30 22l8 8-8 8 8 8M48 22l8 8-8 8 8 8" fill="none" stroke="#e7f6c4" strokeWidth="1.2" />
-          </svg>
-          <svg className="wheel" viewBox="0 0 120 120">
-            <circle cx="60" cy="60" r="46" fill="none" stroke="#c6f135" strokeWidth="6" />
-            <circle cx="60" cy="60" r="34" fill="none" stroke="#e7f6c4" strokeWidth="2" />
-            <circle cx="60" cy="60" r="7" fill="#c6f135" />
-            <path d="M60 14v92M14 60h92M28 28l64 64M92 28L28 92" stroke="#d5e4d6" strokeWidth="1.4" />
-          </svg>
+        <div className="foot-decor" aria-hidden="true">
+          <img className="foot-mat" src="/aloko/mat.jpg" alt="" />
+          <img className="foot-bike" src="/aloko/bicycle.jpg" alt="" />
         </div>
         <p className={about ? "" : "clamp"}>
           Sell it. Give it. Pass it on. Aloko is Nigeria’s place for things that still have a life: sell what you no longer need, give it away, pass a box to many people, or book someone to clear the house. You pay the seller. Aloko does not take that money.
@@ -500,23 +501,21 @@ function AdSlot({
   onAdvertise,
 }: {
   ad?: { id: string; image: string };
-  slot: "ribbon_top" | "ribbon_mid" | "portrait";
-  onAdvertise: (slot: "ribbon_top" | "ribbon_mid" | "portrait") => void;
+  slot: "ribbon_picks" | "ribbon_drops" | "ribbon_furniture" | "portrait";
+  onAdvertise: (slot: "ribbon_picks" | "ribbon_drops" | "ribbon_furniture" | "portrait") => void;
 }) {
-  const portrait = slot === "portrait";
-  const price = portrait ? "₦40,000" : "₦15,000";
-  if (ad) {
+  if (slot === "portrait") {
     return (
-      <div className={portrait ? "portrait-ad live" : "ribbon-ad live"}>
-        <img src={ad.image} alt="" />
-      </div>
+      <button className="portrait-ad" type="button" onClick={() => { if (!ad) onAdvertise(slot); }}>
+        <img src={ad?.image || "/aloko/promote.jpg"} alt={ad ? "" : "Promote your items, services or business on Aloko"} />
+      </button>
     );
   }
+  if (ad) return <div className="ribbon-ad live"><img src={ad.image} alt="" /></div>;
   return (
-    <button className={portrait ? "portrait-ad" : "ribbon-ad"} type="button" onClick={() => onAdvertise(slot)}>
-      <strong>{portrait ? "Portrait placement" : "Flat banner"}</strong>
-      <span>{portrait ? "A tall 9:16 banner, open this week." : "A flat banner, open this week."}</span>
-      <em>{price} · tap to upload</em>
+    <button className="ribbon-ad" type="button" onClick={() => onAdvertise(slot)}>
+      <strong>Ad space</strong>
+      <span>Open this week</span>
     </button>
   );
 }

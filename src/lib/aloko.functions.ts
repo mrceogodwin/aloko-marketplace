@@ -70,6 +70,9 @@ export type AlokoRow = {
   featured: boolean;
   was: number | null;
   verified: boolean;
+  sellerId?: string;
+  postedAt?: string | null;
+  sellerOnline?: boolean;
 };
 
 export type ServiceRow = {
@@ -153,6 +156,9 @@ type ListingSql = {
   featured_until: string | null;
   was_naira: number | null;
   business_verified: boolean;
+  seller_id?: string;
+  created_at?: string | null;
+  seller_online?: boolean;
 };
 
 function text(value: unknown, max: number) {
@@ -195,6 +201,9 @@ function toRow(row: ListingSql): AlokoRow {
     featured: Boolean(row.featured_until && new Date(row.featured_until).getTime() > Date.now()),
     was: row.was_naira && row.was_naira > row.price_naira ? row.was_naira : null,
     verified: Boolean(row.business_verified),
+    sellerId: row.seller_id || "",
+    postedAt: row.created_at ?? null,
+    sellerOnline: Boolean(row.seller_online),
   };
 }
 
@@ -314,7 +323,9 @@ export const listLiveListings = createServerFn({ method: "GET" }).handler(async 
   const sql = await getSql();
   const rows = await sql<ListingSql>`
     select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until, was_naira,
-      coalesce((select verification = 'approved' and account_type = 'business' from aloko_profiles where user_id = aloko_listings.user_id), false) as business_verified
+      aloko_listings.created_at, aloko_listings.user_id as seller_id,
+      coalesce((select verification = 'approved' and account_type = 'business' from aloko_profiles where user_id = aloko_listings.user_id), false) as business_verified,
+      coalesce((select last_seen > now() - interval '5 minutes' from aloko_profiles where user_id = aloko_listings.user_id), false) as seller_online
     from aloko_listings
     where status = 'active' and paused = false and sold_at is null
     order by created_at desc
@@ -585,11 +596,12 @@ export const setListingState = createServerFn({ method: "POST" })
     const sql = await getSql();
     await assertLive(sql, context.userId);
     if (data.action === "sold") {
-      const rows = await sql<{ id: string }>`
+      const rows = await sql<{ id: string; title: string }>`
         update aloko_listings set sold_at = now(), paused = true, sold_price = price_naira, negotiated = false
-        where id = ${data.id} and user_id = ${context.userId} and sold_at is null returning id
+        where id = ${data.id} and user_id = ${context.userId} and sold_at is null returning id, title
       `;
       if (!rows[0]) throw new Error("That listing is already sold or not yours.");
+      await tellFollowers(sql, context.userId, `${rows[0].title} was sold.`, rows[0].id);
     } else {
       const paused = data.action === "pause";
       const rows = await sql<{ id: string }>`
@@ -613,12 +625,13 @@ export const decideListing = createServerFn({ method: "POST" })
     await assertLive(sql, context.userId);
     const roles = await rolesOf(sql, context.userId);
     if (!isStaff(roles)) throw new Error("Only Aloko staff can approve listings.");
-    const rows = await sql<{ id: string; product_code: string }>`
+    const rows = await sql<{ id: string; product_code: string; user_id: string; title: string }>`
       update aloko_listings set status = ${data.status}
       where id = ${data.id} and status = 'pending'
-      returning id, product_code
+      returning id, product_code, user_id, title
     `;
     if (!rows[0]) throw new Error("That listing is not waiting.");
+    if (data.status === "active") await tellFollowers(sql, rows[0].user_id, `${rows[0].title} was just listed.`, rows[0].id);
     await audit(sql, context.userId, data.status === "active" ? "approve-listing" : "reject-listing", rows[0].product_code || rows[0].id);
     return { ok: true };
   });
@@ -898,13 +911,14 @@ export const acceptOffer = createServerFn({ method: "POST" })
     if (thread.seller_id !== context.userId) throw new Error("Only the seller can accept an offer.");
     const buyers = await sql<{ name: string }>`select name from "user" where id = ${offer.buyer_id}`;
     const buyerName = buyers[0]?.name || "Buyer";
-    const updated = await sql<{ id: string }>`
+    const updated = await sql<{ id: string; title: string }>`
       update aloko_listings
       set sold_at = now(), paused = true, sold_price = ${offer.amount}, buyer_id = ${offer.buyer_id}, buyer_name = ${buyerName}, negotiated = true
       where id = ${offer.listing_id} and sold_at is null
-      returning id
+      returning id, title
     `;
     if (!updated[0]) throw new Error("That item is already sold.");
+    await tellFollowers(sql, context.userId, `${updated[0].title} was sold.`, updated[0].id);
     await sql`update aloko_offers set status = 'accepted' where id = ${offer.id}`;
     await sql`update aloko_offers set status = 'declined' where thread_id = ${offer.thread_id} and id <> ${offer.id} and status = 'open'`;
     await sql`
@@ -1246,7 +1260,9 @@ export const listAdQueue = createServerFn({ method: "GET" })
 export const submitAd = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: { slot: string; image: string }) => {
-    const slot = input?.slot === "ribbon_mid" || input?.slot === "portrait" ? input.slot : "ribbon_top";
+    const allowed = ["ribbon_picks", "ribbon_drops", "ribbon_furniture", "portrait"] as const;
+    const slot = allowed.includes(input?.slot as (typeof allowed)[number]) ? (input.slot as (typeof allowed)[number]) : "";
+    if (!slot) throw new Error("That placement is not open.");
     const image = String(input?.image ?? "");
     if (!image.startsWith("data:image/") || image.length > 500_000) throw new Error("Use a banner photo under 400KB.");
     return { slot, image };
@@ -1280,6 +1296,69 @@ export const rejectAd = createServerFn({ method: "POST" })
     await sql`update aloko_orders set status = 'cancelled' where listing_id = ${data} and status = 'unpaid' and kind in ('ad_ribbon', 'ad_portrait')`;
     await audit(sql, context.userId, "reject-ad", data);
     return { ok: true };
+  });
+
+async function tellFollowers(sql: Sql, sellerId: string, body: string, listingId: string) {
+  const people = await sql<{ user_id: string }>`select user_id from aloko_follows where seller_id = ${sellerId}`;
+  for (const person of people) {
+    if (person.user_id === sellerId) continue;
+    await sql`
+      insert into aloko_notes (id, user_id, seller_id, body, listing_id)
+      values (${crypto.randomUUID()}, ${person.user_id}, ${sellerId}, ${body}, ${listingId})
+    `;
+  }
+}
+
+export const touchSeen = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    await sql`update aloko_profiles set last_seen = now() where user_id = ${context.userId}`;
+    return { ok: true };
+  });
+
+export const listNotes = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    return sql<{ id: string; body: string; read: boolean }>`
+      select id, body, read_at is not null as read
+      from aloko_notes where user_id = ${context.userId}
+      order by created_at desc limit 20
+    `;
+  });
+
+export const markNotesRead = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    await sql`update aloko_notes set read_at = now() where user_id = ${context.userId} and read_at is null`;
+    return { ok: true };
+  });
+
+export const listFollows = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    const rows = await sql<{ seller_id: string }>`select seller_id from aloko_follows where user_id = ${context.userId}`;
+    return rows.map((row) => row.seller_id);
+  });
+
+export const toggleFollow = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((sellerId: string) => text(sellerId, 80))
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    if (!data || data === context.userId) throw new Error("You cannot follow yourself.");
+    const existing = await sql<{ seller_id: string }>`
+      select seller_id from aloko_follows where user_id = ${context.userId} and seller_id = ${data}
+    `;
+    if (existing[0]) {
+      await sql`delete from aloko_follows where user_id = ${context.userId} and seller_id = ${data}`;
+      return { following: false };
+    }
+    await sql`insert into aloko_follows (user_id, seller_id) values (${context.userId}, ${data})`;
+    return { following: true };
   });
 
 export const saveRadius = createServerFn({ method: "POST" })

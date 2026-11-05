@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GROK_PROVIDERS, authClient, signIn } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { activateRole, addTicketNote, createListing, decideListing, getDashboard, listHome, listLiveAds, listLiveListings, listLiveServices, listTape, openTicket, openThread, placeOrder, readTicket, recordView, saveRadius, setHomeSection, submitAd, toggleSave, type AlokoRole, type AlokoRow, type DashboardData, type HomeSection, type TicketView } from "@/lib/aloko.functions";
+import { activateRole, addTicketNote, createListing, decideListing, getDashboard, listFollows, listHome, listLiveAds, listLiveListings, listLiveServices, listNotes, listTape, markNotesRead, openTicket, openThread, placeOrder, readTicket, recordView, saveRadius, setHomeSection, submitAd, toggleFollow, toggleSave, touchSeen, type AlokoRole, type AlokoRow, type DashboardData, type HomeSection, type TicketView } from "@/lib/aloko.functions";
 import { ChatDesk } from "@/components/aloko/ChatDesk";
 import { Onboarding } from "@/components/aloko/Onboarding";
 import { Workspace } from "@/components/aloko/Workspace";
@@ -40,6 +40,9 @@ type Listing = {
   coverage?: string;
   featured?: boolean;
   was?: number | null;
+  sellerId?: string;
+  postedAt?: string | null;
+  sellerOnline?: boolean;
 };
 
 const CATEGORIES = [
@@ -63,6 +66,16 @@ const CATEGORIES = [
 type AccountType = AlokoRole;
 
 const CITIES = ["Lagos", "Abuja", "Port Harcourt", "Ibadan", "Enugu", "Benin City", "Kano"];
+const STATES = ["Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue", "Borno", "Cross River", "Delta", "Ebonyi", "Edo", "Ekiti", "Enugu", "Gombe", "Imo", "Jigawa", "Kaduna", "Kano", "Katsina", "Kebbi", "Kogi", "Kwara", "Lagos", "Nasarawa", "Niger", "Ogun", "Ondo", "Osun", "Oyo", "Plateau", "Rivers", "Sokoto", "Taraba", "Yobe", "Zamfara", "FCT"];
+const STATE_CITIES: Record<string, string[]> = {
+  Lagos: ["Lagos"],
+  FCT: ["Abuja"],
+  Rivers: ["Port Harcourt"],
+  Oyo: ["Ibadan"],
+  Enugu: ["Enugu"],
+  Edo: ["Benin City"],
+  Kano: ["Kano"],
+};
 
 const SEED: Listing[] = [
   {
@@ -398,6 +411,9 @@ function fromRow(row: AlokoRow): Listing {
     featured: row.featured,
     was: row.was,
     verified: row.verified,
+    sellerId: row.sellerId,
+    postedAt: row.postedAt,
+    sellerOnline: row.sellerOnline,
   };
 }
 
@@ -590,7 +606,10 @@ export function AlokoApp() {
   const [homeSections, setHomeSections] = useState<HomeSection[]>([]);
   const [liveServices, setLiveServices] = useState<{ id: string; title: string; areas: string; priceNote: string }[]>([]);
   const [liveAds, setLiveAds] = useState<{ id: string; slot: string; image: string }[]>([]);
-  const [adSlot, setAdSlot] = useState<"ribbon_top" | "ribbon_mid" | "portrait" | null>(null);
+  const [adSlot, setAdSlot] = useState<"ribbon_picks" | "ribbon_drops" | "ribbon_furniture" | "portrait" | null>(null);
+  const [notes, setNotes] = useState<{ id: string; body: string; read: boolean }[]>([]);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [follows, setFollows] = useState<string[]>([]);
   const [toast, setToast] = useState("");
   const [selected, setSelected] = useState<Listing | null>(null);
   const [mine, setMine] = useState<Listing[]>([]);
@@ -748,6 +767,16 @@ export function AlokoApp() {
     }
     return next;
   }, [mine, live]);
+  useEffect(() => {
+    if (!user) {
+      setNotes([]);
+      setFollows([]);
+      return;
+    }
+    touchSeen().catch(() => {});
+    listNotes().then(setNotes).catch(() => setNotes([]));
+    listFollows().then(setFollows).catch(() => setFollows([]));
+  }, [user]);
   const staff = Boolean(dash?.profile.roles.includes("moderator") || dash?.profile.roles.includes("super_admin"));
   const canSell = Boolean(dash?.profile.roles.includes("individual") || dash?.profile.roles.includes("business"));
 
@@ -757,7 +786,7 @@ export function AlokoApp() {
       if (savedOnly && !saved.includes(item.id)) return false;
       if (!isLive(item)) return false;
       if (item.paused || item.sold) return false;
-      if (city !== "Nigeria" && item.city !== city) return false;
+      if (city !== "Nigeria" && item.state !== city && item.city !== city && !(STATE_CITIES[city] || []).includes(item.city)) return false;
       if (category !== "All" && item.category !== category) return false;
       if (kind !== "all" && item.kind !== kind) return false;
       if (!q) return true;
@@ -898,9 +927,19 @@ export function AlokoApp() {
               </span>
             </button>
             <div className="icon-row">
-              <button className="round-btn" type="button" aria-label="Notifications" onClick={() => setToast("No new alerts yet.")}>
+              <button className="round-btn" type="button" aria-label="Notifications" onClick={() => {
+                if (!user) {
+                  setToast("Sign in to follow a shop. The dot appears only when a shop you follow posts or sells.");
+                  return;
+                }
+                setNotesOpen(true);
+                if (notes.some((note) => !note.read)) {
+                  markNotesRead().catch(() => {});
+                  setNotes((old) => old.map((note) => ({ ...note, read: true })));
+                }
+              }}>
                 <Icon name="bell" />
-                <i className="dot" />
+                {notes.some((note) => !note.read) && <i className="dot" />}
               </button>
               <button
                 className={savedOnly ? "round-btn on" : "round-btn"}
@@ -927,7 +966,7 @@ export function AlokoApp() {
               </span>
               <select aria-label="Location" value={city} onChange={(e) => setCity(e.target.value)}>
                 <option>Nigeria</option>
-                {CITIES.map((place) => (
+                {STATES.map((place) => (
                   <option key={place}>{place}</option>
                 ))}
               </select>
@@ -1325,6 +1364,23 @@ export function AlokoApp() {
               </button>
               <img src={selected.image} alt="" />
               <h3>{selected.title}</h3>
+              <div className="seller-line">
+                <span className="avatar">{selected.seller.slice(0, 1).toUpperCase()}</span>
+                <div>
+                  <strong>{selected.seller}{selected.verified ? " · Verified business" : ""}</strong>
+                  <small>
+                    {selected.postedAt ? `Posted ${new Date(selected.postedAt).toLocaleString("en-NG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : "Sample listing"}
+                    {selected.sellerId ? <span className={selected.sellerOnline ? "on-dot" : ""}> · {selected.sellerOnline ? "Online" : "Offline"}</span> : ""}
+                  </small>
+                </div>
+                {selected.sellerId && user && (
+                  <button className="ghost" type="button" onClick={() => {
+                    void toggleFollow({ data: selected.sellerId! })
+                      .then((result) => setFollows((old) => result.following ? [...old, selected.sellerId!] : old.filter((id) => id !== selected.sellerId)))
+                      .catch((err: unknown) => setToast(err instanceof Error ? err.message : "Could not follow that shop."));
+                  }}>{follows.includes(selected.sellerId) ? "Following" : "Follow"}</button>
+                )}
+              </div>
               {selected.productCode && <p className="type-lead">{selected.productCode}</p>}
               <div className="price-lg"><PriceLine price={selected.price} was={selected.was} /></div>
               <p className="place">
@@ -1376,6 +1432,18 @@ export function AlokoApp() {
           </div>
         )}
 
+        {notesOpen && (
+          <div className="detail" role="dialog" aria-modal="true" aria-label="Notifications">
+            <div className="detail-card">
+              <button className="linkish" type="button" onClick={() => setNotesOpen(false)}>← Back</button>
+              <h3>Notifications</h3>
+              <p className="type-lead">Only a shop you follow. A new listing, or a sale.</p>
+              <div className="note-list">
+                {notes.length === 0 ? <p>Nothing yet. Follow a shop from a listing.</p> : notes.map((note) => <p key={note.id}>{note.body}</p>)}
+              </div>
+            </div>
+          </div>
+        )}
         {adSlot && (
           <AdUpload
             slot={adSlot}
@@ -1399,7 +1467,7 @@ function AdUpload({
   onDone,
   onError,
 }: {
-  slot: "ribbon_top" | "ribbon_mid" | "portrait";
+  slot: "ribbon_picks" | "ribbon_drops" | "ribbon_furniture" | "portrait";
   onClose: () => void;
   onDone: (amount: number) => void;
   onError: (message: string) => void;
