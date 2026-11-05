@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GROK_PROVIDERS, authClient, signIn } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { activateRole, addTicketNote, createListing, decideListing, getDashboard, listFollows, listHome, listLiveAds, listLiveListings, listLiveServices, listNotes, listTape, markNotesRead, openTicket, openThread, readTicket, recordView, saveRadius, setHomeSection, startCheckout, submitAd, toggleFollow, toggleSave, touchSeen, type AlokoRole, type AlokoRow, type DashboardData, type HomeSection, type TicketView } from "@/lib/aloko.functions";
+import { activateRole, addTicketNote, createListing, decideListing, getDashboard, listAdSlots, listFollows, listHome, listLiveAds, listLiveListings, listLiveServices, listNotes, listTape, markNotesRead, openTicket, openThread, readTicket, recordView, reserveAd, saveRadius, setHomeSection, startCheckout, submitAd, toggleFollow, toggleSave, touchSeen, type AlokoRole, type AlokoRow, type DashboardData, type HomeSection, type TicketView } from "@/lib/aloko.functions";
 import { ChatDesk } from "@/components/aloko/ChatDesk";
 import { Onboarding } from "@/components/aloko/Onboarding";
 import { Workspace } from "@/components/aloko/Workspace";
@@ -1452,7 +1452,7 @@ export function AlokoApp() {
           </div>
         )}
         {adSlot && (
-          <AdUpload
+          <AdBook
             slot={adSlot}
             onClose={() => setAdSlot(null)}
             onError={(message) => setToast(message)}
@@ -1464,7 +1464,7 @@ export function AlokoApp() {
   );
 }
 
-function AdUpload({
+function AdBook({
   slot,
   onClose,
   onError,
@@ -1473,8 +1473,32 @@ function AdUpload({
   onClose: () => void;
   onError: (message: string) => void;
 }) {
+  const names: Record<typeof slot, string> = {
+    ribbon_picks: "This week’s picks",
+    ribbon_drops: "Price drops",
+    ribbon_furniture: "Furniture around you",
+    portrait: "Portrait, before the footer",
+  };
+  const [step, setStep] = useState<"place" | "art" | "pay" | "full">("place");
+  const [slots, setSlots] = useState<{ slot: typeof slot; capacity: number; left: number }[]>([]);
+  const [picked, setPicked] = useState(slot);
+  const [holdId, setHoldId] = useState("");
   const [image, setImage] = useState("");
-  const portrait = slot === "portrait";
+  const [busy, setBusy] = useState(false);
+  const chosen = slots.find((row) => row.slot === picked);
+  const portrait = picked === "portrait";
+  const price = portrait ? "₦40,000" : "₦15,000";
+
+  useEffect(() => {
+    listAdSlots()
+      .then((rows) => {
+        setSlots(rows as { slot: typeof slot; capacity: number; left: number }[]);
+        const mine = rows.find((row) => row.slot === slot);
+        if (mine && mine.left === 0) setStep("full");
+      })
+      .catch((err: unknown) => onError(err instanceof Error ? err.message : "Could not load the slots."));
+  }, [slot]);
+
   const read = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -1493,26 +1517,97 @@ function AdUpload({
     };
     reader.readAsDataURL(file);
   };
+
+  const hold = () => {
+    if (!chosen || chosen.left === 0) {
+      setStep("full");
+      return;
+    }
+    setBusy(true);
+    void reserveAd({ data: picked })
+      .then((held) => {
+        setHoldId(held.id);
+        setStep("art");
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : "No Ads Slot Left";
+        if (message.includes("No Ads Slot Left")) setStep("full");
+        else onError(message);
+      })
+      .finally(() => setBusy(false));
+  };
+
+  const pay = () => {
+    if (!holdId || !image) return;
+    setBusy(true);
+    void submitAd({ data: { id: holdId, image } })
+      .then((created) => startCheckout({ data: { orderId: created.orderId } }))
+      .then((result) => { window.location.assign(result.authorizationUrl); })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : "No Ads Slot Left";
+        if (message.includes("No Ads Slot Left")) setStep("full");
+        else onError(message);
+        setBusy(false);
+      });
+  };
+
   return (
     <div className="detail" role="dialog" aria-modal="true" aria-label="Book a banner">
       <div className="detail-card form">
         <button className="linkish" type="button" onClick={onClose}>← Back</button>
-        <h3>{portrait ? "Portrait banner" : "Flat banner"}</h3>
-        <p className="type-lead">{portrait ? "A portrait placement. ₦40,000 for the week." : "A flat placement. ₦15,000 for the week."} Paystack takes the payment. A super admin places the artwork only after Paystack confirms it.</p>
-        <label>
-          Banner photo
-          <input type="file" accept="image/*" onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) read(file);
-          }} />
-        </label>
-        {image && <img src={image} alt="" />}
-        <button className="primary" type="button" disabled={!image} onClick={() => {
-          void submitAd({ data: { slot, image } })
-            .then((created) => startCheckout({ data: { orderId: created.orderId } }))
-            .then((result) => { window.location.assign(result.authorizationUrl); })
-            .catch((err: unknown) => onError(err instanceof Error ? err.message : "Could not open Paystack."));
-        }}>Pay with Paystack</button>
+        <p className="ad-steps">{step === "place" || step === "full" ? "1 · Placement" : step === "art" ? "2 · Artwork" : "3 · Payment"}</p>
+        {step === "full" ? (
+          <>
+            <h3>No Ads Slot Left</h3>
+            <p className="type-lead">This placement is booked for the week. Payment does not open when there is no space.</p>
+            <button className="ghost" type="button" onClick={onClose}>Close</button>
+          </>
+        ) : step === "place" ? (
+          <>
+            <h3>Choose a placement</h3>
+            <p className="type-lead">A space is held for 20 minutes once you continue. The price is on the payment screen.</p>
+            <div className="ad-slots">
+              {slots.map((row) => (
+                <button key={row.slot} className={picked === row.slot ? "ad-slot on" : "ad-slot"} type="button" onClick={() => setPicked(row.slot)}>
+                  <strong>{names[row.slot]}</strong>
+                  <span>{row.left === 0 ? "No Ads Slot Left" : `${row.left} slot left`}</span>
+                </button>
+              ))}
+            </div>
+            {chosen && chosen.left === 0 ? (
+              <p className="err">No Ads Slot Left</p>
+            ) : (
+              <button className="primary" type="button" disabled={busy || !chosen} onClick={hold}>{busy ? "Holding the slot…" : "Continue"}</button>
+            )}
+          </>
+        ) : step === "art" ? (
+          <>
+            <h3>Add the artwork</h3>
+            <p className="type-lead">{names[picked]}. {chosen ? `${chosen.left} slot left before this hold.` : ""}</p>
+            <label>
+              Banner photo
+              <input type="file" accept="image/*" onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) read(file);
+              }} />
+            </label>
+            {image && <img src={image} alt="" />}
+            <div className="detail-actions">
+              <button className="ghost" type="button" onClick={() => setStep("place")}>Back</button>
+              <button className="primary" type="button" disabled={!image} onClick={() => setStep("pay")}>Continue</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h3>Pay for the week</h3>
+            <p className="type-lead">{names[picked]} · {price}. Paystack confirms the money, then the banner goes up. A super admin does not have to place it.</p>
+            {image && <img src={image} alt="" />}
+            <div className="detail-actions">
+              <button className="ghost" type="button" onClick={() => setStep("art")}>Back</button>
+              <button className="primary" type="button" disabled={busy} onClick={pay}>{busy ? "Opening Paystack…" : "Pay with Paystack"}</button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

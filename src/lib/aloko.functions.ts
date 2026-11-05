@@ -1235,6 +1235,35 @@ export const addTicketNote = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+const AD_SLOTS = ["ribbon_picks", "ribbon_drops", "ribbon_furniture", "portrait"] as const;
+const AD_CAP: Record<(typeof AD_SLOTS)[number], number> = {
+  ribbon_picks: 1,
+  ribbon_drops: 1,
+  ribbon_furniture: 1,
+  portrait: 1,
+};
+
+function adSlot(value: string) {
+  return AD_SLOTS.includes(value as (typeof AD_SLOTS)[number]) ? (value as (typeof AD_SLOTS)[number]) : "";
+}
+
+export const listAdSlots = createServerFn({ method: "GET" }).handler(async () => {
+  const sql = await getSql();
+  const used = await sql<{ slot: string; n: number }>`
+    select slot, count(*)::int as n from aloko_ads
+    where (status = 'active' and created_at > now() - interval '7 days')
+       or status = 'pending'
+       or (status = 'hold' and hold_until > now())
+    group by slot
+  `;
+  const taken = new Map(used.map((row) => [row.slot, row.n]));
+  return AD_SLOTS.map((slot) => {
+    const capacity = AD_CAP[slot];
+    const left = Math.max(0, capacity - (taken.get(slot) ?? 0));
+    return { slot, capacity, left };
+  });
+});
+
 export const listLiveAds = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await getSql();
   return sql<{ id: string; slot: string; image: string }>`
@@ -1249,48 +1278,86 @@ export const listAdQueue = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const sql = await getSql();
     const roles = await rolesOf(sql, context.userId);
-    if (!roles.includes("super_admin")) throw new Error("Only a super admin can manage placements.");
+    if (!isStaff(roles)) throw new Error("Only Aloko staff can review placements.");
     return sql<{ id: string; slot: string; image: string; status: string; orderId: string | null; amount: number | null; payStatus: string | null }>`
       select a.id, a.slot, a.image, a.status, o.id as "orderId", o.amount, o.status as "payStatus"
       from aloko_ads a
-      left join lateral (
-        select id, amount, status from aloko_orders
-        where listing_id = a.id and kind in ('ad_ribbon', 'ad_portrait')
-        order by created_at desc limit 1
-      ) o on true
-      where a.status = 'pending'
+      join aloko_orders o on o.listing_id = a.id and o.status = 'paid' and o.kind in ('ad_ribbon', 'ad_portrait')
+      where a.status = 'active' and a.created_at > now() - interval '7 days'
       order by a.created_at desc
       limit 20
     `;
   });
 
-export const submitAd = createServerFn({ method: "POST" })
+export const reserveAd = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: { slot: string; image: string }) => {
-    const allowed = ["ribbon_picks", "ribbon_drops", "ribbon_furniture", "portrait"] as const;
-    const slot = allowed.includes(input?.slot as (typeof allowed)[number]) ? (input.slot as (typeof allowed)[number]) : "";
-    if (!slot) throw new Error("That placement is not open.");
-    const image = String(input?.image ?? "");
-    if (!image.startsWith("data:image/") || image.length > 500_000) throw new Error("Use a banner photo under 400KB.");
-    return { slot, image };
+  .validator((slot: string) => {
+    const next = adSlot(slot);
+    if (!next) throw new Error("That placement is not open.");
+    return next;
   })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     await assertLive(sql, context.userId);
-    const taken = await sql<{ id: string }>`
-      select id from aloko_ads where slot = ${data.slot} and status = 'active' and created_at > now() - interval '7 days' limit 1
+    const used = await sql<{ n: number }>`
+      select count(*)::int as n from aloko_ads
+      where slot = ${data}
+        and (
+          (status = 'active' and created_at > now() - interval '7 days')
+          or status = 'pending'
+          or (status = 'hold' and hold_until > now())
+        )
     `;
-    if (taken[0]) throw new Error("That placement is booked this week.");
+    if ((used[0]?.n ?? 0) >= AD_CAP[data]) throw new Error("No Ads Slot Left");
     const id = crypto.randomUUID();
-    await sql`insert into aloko_ads (id, user_id, slot, image) values (${id}, ${context.userId}, ${data.slot}, ${data.image})`;
-    const kind = data.slot === "portrait" ? "ad_portrait" : "ad_ribbon";
-    const amount = PRICES[kind];
+    await sql`
+      insert into aloko_ads (id, user_id, slot, image, status, hold_until)
+      values (${id}, ${context.userId}, ${data}, '', 'hold', now() + interval '20 minutes')
+    `;
+    const again = await sql<{ n: number }>`
+      select count(*)::int as n from aloko_ads
+      where slot = ${data}
+        and (
+          (status = 'active' and created_at > now() - interval '7 days')
+          or status = 'pending'
+          or (status = 'hold' and hold_until > now())
+        )
+    `;
+    if ((again[0]?.n ?? 0) > AD_CAP[data]) {
+      await sql`delete from aloko_ads where id = ${id}`;
+      throw new Error("No Ads Slot Left");
+    }
+    return { id, left: AD_CAP[data] - (again[0]?.n ?? 1) };
+  });
+
+export const submitAd = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { id: string; image: string }) => {
+    const image = String(input?.image ?? "");
+    if (!image.startsWith("data:image/") || image.length > 500_000) throw new Error("Use a banner photo under 400KB.");
+    return { id: text(input?.id, 80), image };
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    await assertLive(sql, context.userId);
+    const rows = await sql<{ id: string; slot: string; status: string }>`
+      select id, slot, status from aloko_ads
+      where id = ${data.id} and user_id = ${context.userId} and status = 'hold' and hold_until > now()
+    `;
+    const ad = rows[0];
+    if (!ad) throw new Error("No Ads Slot Left");
+    await sql`update aloko_ads set image = ${data.image}, hold_until = now() + interval '20 minutes' where id = ${ad.id}`;
+    const kind = ad.slot === "portrait" ? "ad_portrait" : "ad_ribbon";
+    const existing = await sql<{ id: string }>`
+      select id from aloko_orders where listing_id = ${ad.id} and user_id = ${context.userId} and status = 'unpaid' limit 1
+    `;
+    if (existing[0]) return { id: ad.id, orderId: existing[0].id, amount: PRICES[kind] };
     const orderId = crypto.randomUUID();
     await sql`
       insert into aloko_orders (id, user_id, kind, amount, listing_id)
-      values (${orderId}, ${context.userId}, ${kind}, ${amount}, ${id})
+      values (${orderId}, ${context.userId}, ${kind}, ${PRICES[kind]}, ${ad.id})
     `;
-    return { id, amount, orderId };
+    return { id: ad.id, orderId, amount: PRICES[kind] };
   });
 
 export const rejectAd = createServerFn({ method: "POST" })
@@ -1299,7 +1366,7 @@ export const rejectAd = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const roles = await rolesOf(sql, context.userId);
-    if (!roles.includes("super_admin")) throw new Error("Only a super admin can decline a placement.");
+    if (!isStaff(roles)) throw new Error("Only Aloko staff can decline a placement.");
     await sql`update aloko_ads set status = 'rejected' where id = ${data}`;
     await sql`update aloko_orders set status = 'cancelled' where listing_id = ${data} and status = 'unpaid' and kind in ('ad_ribbon', 'ad_portrait')`;
     await audit(sql, context.userId, "reject-ad", data);
@@ -1414,6 +1481,12 @@ export async function settlePaystackReference(reference: string) {
   if (order.kind === "tape_line" && order.listing_id) {
     await sql`update aloko_tape set status = 'pending' where id = ${order.listing_id} and status = 'hold'`;
   }
+  if ((order.kind === "ad_ribbon" || order.kind === "ad_portrait") && order.listing_id) {
+    await sql`
+      update aloko_ads set status = 'active', hold_until = null
+      where id = ${order.listing_id} and status in ('hold', 'pending')
+    `;
+  }
   await audit(sql, order.user_id, "paystack-paid", order.id);
   return { ok: true as const };
 }
@@ -1448,6 +1521,23 @@ export const startCheckout = createServerFn({ method: "POST" })
       `;
       const found = rows[0];
       if (!found || found.status !== "unpaid") throw new Error("That payment is not waiting.");
+      if (found.kind === "ad_ribbon" || found.kind === "ad_portrait") {
+        const held = await sql<{ id: string; slot: string }>`
+          select id, slot from aloko_ads
+          where id = ${found.listing_id} and user_id = ${context.userId} and status = 'hold' and hold_until > now()
+        `;
+        if (!held[0]) throw new Error("No Ads Slot Left");
+        const others = await sql<{ n: number }>`
+          select count(*)::int as n from aloko_ads
+          where slot = ${held[0].slot} and id <> ${held[0].id}
+            and (
+              (status = 'active' and created_at > now() - interval '7 days')
+              or status = 'pending'
+              or (status = 'hold' and hold_until > now())
+            )
+        `;
+        if ((others[0]?.n ?? 0) >= AD_CAP[adSlot(held[0].slot) || "ribbon_picks"]) throw new Error("No Ads Slot Left");
+      }
       order = found;
     } else {
       if (!(data.kind in PRICES)) throw new Error("That plan is not on the price list.");
@@ -1496,18 +1586,26 @@ export const publishAd = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const roles = await rolesOf(sql, context.userId);
-    if (!roles.includes("super_admin")) throw new Error("Only a super admin can place a banner.");
+    if (!isStaff(roles)) throw new Error("Only Aloko staff can approve a banner.");
     const paid = await sql<{ id: string }>`
       select id from aloko_orders
       where listing_id = ${data} and status = 'paid' and kind in ('ad_ribbon', 'ad_portrait')
       limit 1
     `;
     if (!paid[0]) throw new Error("Paystack has not confirmed this banner.");
+    const slot = await sql<{ slot: string }>`select slot from aloko_ads where id = ${data} and status = 'pending'`;
+    if (!slot[0]) throw new Error("That banner is not waiting.");
+    const live = await sql<{ n: number }>`
+      select count(*)::int as n from aloko_ads
+      where slot = ${slot[0].slot} and status = 'active' and created_at > now() - interval '7 days' and id <> ${data}
+    `;
+    const cap = AD_CAP[adSlot(slot[0].slot) || "ribbon_picks"];
+    if ((live[0]?.n ?? 0) >= cap) throw new Error("No Ads Slot Left");
     const rows = await sql<{ id: string }>`
       update aloko_ads set status = 'active' where id = ${data} and status = 'pending' returning id
     `;
     if (!rows[0]) throw new Error("That banner is not waiting.");
-    await audit(sql, context.userId, "place-ad", data);
+    await audit(sql, context.userId, "approve-ad", data);
     return { ok: true };
   });
 

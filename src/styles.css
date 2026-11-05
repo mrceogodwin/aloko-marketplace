@@ -2437,3 +2437,46 @@
   pointer-events: auto;
   transform: none;
 }
+
+.ad-steps {
+  margin: 0;
+  color: #3d6b4a;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ad-slots {
+  display: grid;
+  gap: 8px;
+}
+
+.ad-slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  border: 1px solid #d5e0d4;
+  background: white;
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.ad-slot.on {
+  border-color: #123018;
+  box-shadow: inset 0 0 0 1px #123018;
+}
+
+.ad-slot strong {
+  display: block;
+  font-size: 14px;
+}
+
+.ad-slot span {
+  color: #3d6b4a;
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+}

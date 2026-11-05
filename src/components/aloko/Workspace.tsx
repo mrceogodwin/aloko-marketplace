@@ -8,7 +8,6 @@ import {
   decideService,
   grantModerator,
   startCheckout,
-  publishAd,
   postTape,
   decideTape,
   reviewBusiness,
@@ -81,7 +80,7 @@ export function Workspace({
   useEffect(() => {
     if (role !== "moderator" && role !== "super_admin") return;
     listTickets().then(setTickets).catch(() => setTickets([]));
-    if (role === "super_admin") listAdQueue().then(setAds).catch(() => setAds([]));
+    listAdQueue().then(setAds).catch(() => setAds([]));
   }, [role, data]);
 
   const run = (work: Promise<unknown>) => {
@@ -211,6 +210,8 @@ export function Workspace({
               </div>
             </article>
           ))}
+          <h3 className="mine-head">Ad placements</h3>
+          <p className="type-lead">A paid banner goes up after Paystack. It does not wait for someone to press approve.</p>
           <h3 className="mine-head">Service moderation</h3>
           {data.serviceQueue.length === 0 ? <p className="type-lead">No services are waiting.</p> : data.serviceQueue.map((item) => (
             <article key={item.id} className="queue-card">
@@ -271,16 +272,15 @@ export function Workspace({
             </article>
           ))}
           <h3 className="mine-head">Ad placements</h3>
-          <p className="type-lead">A banner stays off the home until Paystack confirms the money and you place the artwork.</p>
-          {ads.length === 0 ? <p className="type-lead">No banner is waiting.</p> : ads.map((item) => (
+          <p className="type-lead">A paid banner goes up on its own after Paystack. Decline it here only if it should not stay on the home.</p>
+          {ads.length === 0 ? <p className="type-lead">No banner is live this week.</p> : ads.map((item) => (
             <article key={item.id} className="queue-card">
               <img src={item.image} alt="" />
               <div>
                 <strong>{item.slot === "portrait" ? "Portrait" : "Flat banner"}</strong>
-                <span>{item.amount ? money(item.amount) : "No payment"} · {item.payStatus === "paid" ? "Paystack paid" : "Waiting on Paystack"}</span>
+                <span>{item.amount ? money(item.amount) : ""} · live</span>
                 <div className="queue-actions">
-                  {item.payStatus === "paid" && <button className="primary" type="button" onClick={() => run(publishAd({ data: item.id }).then(() => listAdQueue().then(setAds)))}>Place it</button>}
-                  <button className="ghost" type="button" onClick={() => run(rejectAd({ data: item.id }).then(() => listAdQueue().then(setAds)))}>Decline</button>
+                  <button className="ghost" type="button" onClick={() => run(rejectAd({ data: item.id }).then(() => listAdQueue().then(setAds)))}>Take it down</button>
                 </div>
               </div>
             </article>
