@@ -921,6 +921,7 @@ export function AlokoApp() {
               <button type="button" onClick={() => { setPricing(true); setDesk(false); setMenu(false); }}>Pricing</button>
               {staff && <button type="button" onClick={() => { setDesk(true); setPricing(false); setMenu(false); }}>Review queue</button>}
               <button type="button" onClick={() => { setTab("account"); setDesk(false); setPricing(false); setMenu(false); }}>Account</button>
+              <a href="mailto:hello@aloko.ng">Email support · hello@aloko.ng</a>
             </div>
           )}
         </header>

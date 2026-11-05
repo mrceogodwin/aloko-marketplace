@@ -262,7 +262,7 @@
   right: 14px;
   top: 64px;
   z-index: 20;
-  min-width: 190px;
+  min-width: 230px;
   background: white;
   color: var(--color-ink);
   border-radius: 16px;
@@ -270,7 +270,8 @@
   box-shadow: 0 16px 40px #00150d55;
 }
 
-.menu-panel button {
+.menu-panel button,
+.menu-panel a {
   display: block;
   width: 100%;
   text-align: left;
@@ -281,9 +282,11 @@
   font-size: 13px;
   padding: 11px 10px;
   border-radius: 10px;
+  text-decoration: none;
 }
 
-.menu-panel button:hover {
+.menu-panel button:hover,
+.menu-panel a:hover {
   background: var(--color-sheet);
 }
 
@@ -1407,9 +1410,9 @@
 .dock {
   position: relative;
   z-index: 4;
-  margin-top: -28px;
-  padding-top: 28px;
-  background: linear-gradient(180deg, rgba(1, 33, 21, 0) 0%, rgba(1, 33, 21, 0.22) 42%, rgba(1, 33, 21, 0.72) 74%, #012115 100%);
+  margin-top: -12px;
+  padding: 12px 0 6px;
+  background: linear-gradient(180deg, rgba(1, 33, 21, 0) 0%, #012115 100%);
   pointer-events: none;
 }
 
@@ -1418,7 +1421,7 @@
 }
 
 .nav-tabs {
-  margin: 2px 8px calc(2px + env(safe-area-inset-bottom));
+  margin: 0 8px 0;
   padding: 6px;
   border-radius: var(--radius-pill);
   background: #012214;
@@ -1969,19 +1972,30 @@
   color: #c6f135;
 }
 
+.foot-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.foot-brand .brand-mark {
+  width: 28px;
+  height: 28px;
+}
+
 .devices {
   position: relative;
   display: grid;
-  gap: 12px;
-  margin: 14px 0 16px;
-  padding-top: 14px;
+  gap: 8px;
+  margin: 10px 0 12px;
+  padding-top: 10px;
   border-top: 1px solid #ffffff18;
 }
 
 .devices-copy h2 {
-  font-size: 26px;
+  font-size: 22px;
   line-height: 1.05;
-  letter-spacing: -0.6px;
+  letter-spacing: -0.5px;
 }
 
 .devices-copy p {
@@ -2001,10 +2015,10 @@
   display: grid;
   justify-items: center;
   align-content: start;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
-  padding: 12px 8px 10px;
-  border-radius: 18px;
+  padding: 8px 6px 7px;
+  border-radius: 14px;
   text-align: center;
 }
 
@@ -2021,13 +2035,13 @@
 }
 
 .device strong {
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1.1;
 }
 
 .device small {
   color: #3d5c48;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
 }
 
@@ -2036,10 +2050,10 @@
 }
 
 .device-ico {
-  width: 36px;
-  height: 36px;
-  margin-bottom: 4px;
-  border-radius: 12px;
+  width: 26px;
+  height: 26px;
+  margin-bottom: 2px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   background: #123018;
@@ -2052,8 +2066,8 @@
 }
 
 .device-ico svg {
-  width: 20px;
-  height: 20px;
+  width: 14px;
+  height: 14px;
 }
 
 .device-check {
@@ -2074,12 +2088,13 @@
 
 .device button,
 .soon-pill {
-  margin-top: 6px;
-  min-height: 26px;
-  padding: 0 8px;
+  margin-top: 4px;
+  min-height: 20px;
+  padding: 0 6px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .device button {
@@ -2194,7 +2209,7 @@
 .to-top {
   position: absolute;
   right: 16px;
-  bottom: calc(86px + env(safe-area-inset-bottom));
+  bottom: calc(62px + env(safe-area-inset-bottom));
   z-index: 5;
   display: grid;
   place-items: center;
