@@ -18,6 +18,8 @@ import {
   setSuspended,
   submitVerification,
   listTickets,
+  listAdQueue,
+  rejectAd,
   replyTicket,
   type AlokoRole,
   type DashboardData,
@@ -73,11 +75,13 @@ export function Workspace({
   const [service, setService] = useState({ title: "", description: "", areas: "Lagos", priceNote: "Request a quote" });
   const [staffEmail, setStaffEmail] = useState("");
   const [tickets, setTickets] = useState<{ id: string; subject: string; email: string; status: string }[]>([]);
+  const [ads, setAds] = useState<{ id: string; slot: string; image: string; status: string; orderId: string | null; amount: number | null }[]>([]);
   const [ticketReply, setTicketReply] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (role !== "moderator" && role !== "super_admin") return;
     listTickets().then(setTickets).catch(() => setTickets([]));
+    if (role === "super_admin") listAdQueue().then(setAds).catch(() => setAds([]));
   }, [role, data]);
 
   const run = (work: Promise<unknown>) => {
@@ -257,6 +261,21 @@ export function Workspace({
                   <button className="ghost" type="button" onClick={() => onHome(section.id, { direction: "up" })}>Up</button>
                   <button className="ghost" type="button" onClick={() => onHome(section.id, { direction: "down" })}>Down</button>
                   <button className="primary" type="button" onClick={() => onHome(section.id, { enabled: !section.enabled })}>{section.enabled ? "Hide" : "Show"}</button>
+                </div>
+              </div>
+            </article>
+          ))}
+          <h3 className="mine-head">Ad placements</h3>
+          <p className="type-lead">A banner stays off the home until you confirm the payment. Decline sends it back.</p>
+          {ads.length === 0 ? <p className="type-lead">No banner is waiting.</p> : ads.map((item) => (
+            <article key={item.id} className="queue-card">
+              <img src={item.image} alt="" />
+              <div>
+                <strong>{item.slot === "portrait" ? "Portrait" : "Flat banner"}</strong>
+                <span>{item.amount ? money(item.amount) : "No payment waiting"}</span>
+                <div className="queue-actions">
+                  {item.orderId && <button className="primary" type="button" onClick={() => run(confirmOrder({ data: item.orderId! }).then(() => listAdQueue().then(setAds)))}>Place it</button>}
+                  <button className="ghost" type="button" onClick={() => run(rejectAd({ data: item.id }).then(() => listAdQueue().then(setAds)))}>Decline</button>
                 </div>
               </div>
             </article>

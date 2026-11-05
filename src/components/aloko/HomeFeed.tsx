@@ -44,6 +44,16 @@ const CHANNELS: { label: string; image: string; kind: "all" | HomeItem["kind"]; 
   { label: "Fashion", image: "/aloko/sneaker.jpg", kind: "all", category: "Fashion" },
   { label: "Home", image: "/aloko/blender.jpg", kind: "all", category: "Home & Living" },
   { label: "Sports", image: "/aloko/weights.jpg", kind: "all", category: "Sports" },
+  { label: "Beds", image: "/aloko/sofa.jpg", kind: "all", category: "Beds" },
+  { label: "Generators", image: "/aloko/weights.jpg", kind: "all", category: "Generators" },
+  { label: "Appliances", image: "/aloko/blender.jpg", kind: "all", category: "Appliances" },
+  { label: "Kids", image: "/aloko/chair.jpg", kind: "all", category: "Kids" },
+  { label: "Garden", image: "/aloko/hero.jpg", kind: "all", category: "Garden" },
+  { label: "Tools", image: "/aloko/weights.jpg", kind: "all", category: "Tools" },
+  { label: "Music", image: "/aloko/phone.jpg", kind: "all", category: "Music" },
+  { label: "Beauty", image: "/aloko/sneaker.jpg", kind: "all", category: "Beauty" },
+  { label: "Pets", image: "/aloko/chair.jpg", kind: "all", category: "Pets" },
+  { label: "Storage", image: "/aloko/sofa.jpg", kind: "all", category: "Storage" },
 ];
 
 const CAMPAIGNS: { id: string; kicker: string; title: string; line: string; image: string; kind: "all" | HomeItem["kind"]; category: string }[] = [
@@ -88,7 +98,9 @@ export function HomeFeed({
   tape,
   sections,
   services,
+  ads,
   onService,
+  onAdvertise,
 }: {
   items: HomeItem[];
   saved: string[];
@@ -105,7 +117,9 @@ export function HomeFeed({
   tape: { id: string; text: string; mark: string }[];
   sections: { id: string; title: string }[];
   services: { id: string; title: string; areas: string; priceNote: string }[];
+  ads: { id: string; slot: string; image: string }[];
   onService: (service: { id: string; title: string; areas: string; priceNote: string }) => void;
+  onAdvertise: (slot: "ribbon_top" | "ribbon_mid" | "portrait") => void;
 }) {
   const [lane, setLane] = useState<Lane>("all");
   const [tabsOn, setTabsOn] = useState(true);
@@ -155,7 +169,7 @@ export function HomeFeed({
     if (id === "electronics") return pool.filter((item) => item.category === "Electronics");
     if (id === "furniture") return pool.filter((item) => item.category === "Furniture");
     if (id === "home") return pool.filter((item) => item.category === "Home & Living");
-    if (id === "verified") return pool.filter((item) => item.verified);
+    if (id === "verified") return pool.filter((item) => item.condition === "Fair");
     return [];
   };
   const slides = useMemo(() => {
@@ -336,6 +350,8 @@ export function HomeFeed({
             ))}
           </div>
 
+          <AdSlot ad={ads.find((item) => item.slot === "ribbon_top")} slot="ribbon_top" onAdvertise={onAdvertise} />
+
           <div className="big-cats">
             {CHANNELS.slice(0, 6).map((item) => (
               <button key={item.label} className="big-cat" type="button" onClick={() => onBrowse(item.kind, item.category)}>
@@ -344,6 +360,8 @@ export function HomeFeed({
               </button>
             ))}
           </div>
+
+          <AdSlot ad={ads.find((item) => item.slot === "ribbon_mid")} slot="ribbon_mid" onAdvertise={onAdvertise} />
 
           {sections.map((section) => section.id === "services" ? (
             services.length === 0 ? null : (
@@ -377,6 +395,7 @@ export function HomeFeed({
               <span className="promo-go">→</span>
             </button>
           </div>
+          <AdSlot ad={ads.find((item) => item.slot === "portrait")} slot="portrait" onAdvertise={onAdvertise} />
         </>
       )}
 
@@ -389,6 +408,19 @@ export function HomeFeed({
           </svg>
           Aloko
         </h2>
+        <div className="foot-art" aria-hidden="true">
+          <svg className="cloth" viewBox="0 0 120 90">
+            <path d="M8 18h70l18 54H22z" fill="#163528" stroke="#c6f135" strokeWidth="2" />
+            <path d="M18 28h52M22 40h48M26 52h40M30 64h28" stroke="#9dcc3a" strokeWidth="1.4" />
+            <path d="M30 22l8 8-8 8 8 8M48 22l8 8-8 8 8 8" fill="none" stroke="#e7f6c4" strokeWidth="1.2" />
+          </svg>
+          <svg className="wheel" viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="46" fill="none" stroke="#c6f135" strokeWidth="6" />
+            <circle cx="60" cy="60" r="34" fill="none" stroke="#e7f6c4" strokeWidth="2" />
+            <circle cx="60" cy="60" r="7" fill="#c6f135" />
+            <path d="M60 14v92M14 60h92M28 28l64 64M92 28L28 92" stroke="#d5e4d6" strokeWidth="1.4" />
+          </svg>
+        </div>
         <p className={about ? "" : "clamp"}>
           Sell it. Give it. Pass it on. Aloko is Nigeria’s place for things that still have a life: sell what you no longer need, give it away, pass a box to many people, or book someone to clear the house. You pay the seller. Aloko does not take that money.
         </p>
@@ -459,6 +491,33 @@ export function HomeFeed({
       </footer>
       <button className={showTop ? "to-top show" : "to-top"} type="button" aria-label="Back to top" onClick={() => document.querySelector(".aloko-main")?.scrollTo({ top: 0, behavior: "smooth" })}>↑</button>
     </div>
+  );
+}
+
+function AdSlot({
+  ad,
+  slot,
+  onAdvertise,
+}: {
+  ad?: { id: string; image: string };
+  slot: "ribbon_top" | "ribbon_mid" | "portrait";
+  onAdvertise: (slot: "ribbon_top" | "ribbon_mid" | "portrait") => void;
+}) {
+  const portrait = slot === "portrait";
+  const price = portrait ? "₦40,000" : "₦15,000";
+  if (ad) {
+    return (
+      <div className={portrait ? "portrait-ad live" : "ribbon-ad live"}>
+        <img src={ad.image} alt="" />
+      </div>
+    );
+  }
+  return (
+    <button className={portrait ? "portrait-ad" : "ribbon-ad"} type="button" onClick={() => onAdvertise(slot)}>
+      <strong>{portrait ? "Portrait placement" : "Flat banner"}</strong>
+      <span>{portrait ? "A tall 9:16 banner, open this week." : "A flat banner, open this week."}</span>
+      <em>{price} · tap to upload</em>
+    </button>
   );
 }
 

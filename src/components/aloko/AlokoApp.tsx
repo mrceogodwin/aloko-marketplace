@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GROK_PROVIDERS, authClient, signIn } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { activateRole, addTicketNote, createListing, decideListing, getDashboard, listHome, listLiveListings, listLiveServices, listTape, openTicket, openThread, placeOrder, readTicket, recordView, saveRadius, setHomeSection, toggleSave, type AlokoRole, type AlokoRow, type DashboardData, type HomeSection, type TicketView } from "@/lib/aloko.functions";
+import { activateRole, addTicketNote, createListing, decideListing, getDashboard, listHome, listLiveAds, listLiveListings, listLiveServices, listTape, openTicket, openThread, placeOrder, readTicket, recordView, saveRadius, setHomeSection, submitAd, toggleSave, type AlokoRole, type AlokoRow, type DashboardData, type HomeSection, type TicketView } from "@/lib/aloko.functions";
 import { ChatDesk } from "@/components/aloko/ChatDesk";
 import { Onboarding } from "@/components/aloko/Onboarding";
 import { Workspace } from "@/components/aloko/Workspace";
@@ -48,6 +48,16 @@ const CATEGORIES = [
   { id: "Fashion", image: "/aloko/sneaker.jpg" },
   { id: "Home & Living", image: "/aloko/blender.jpg" },
   { id: "Sports", image: "/aloko/weights.jpg" },
+  { id: "Beds", image: "/aloko/sofa.jpg" },
+  { id: "Generators", image: "/aloko/weights.jpg" },
+  { id: "Appliances", image: "/aloko/blender.jpg" },
+  { id: "Kids", image: "/aloko/chair.jpg" },
+  { id: "Garden", image: "/aloko/hero.jpg" },
+  { id: "Tools", image: "/aloko/weights.jpg" },
+  { id: "Music", image: "/aloko/phone.jpg" },
+  { id: "Beauty", image: "/aloko/sneaker.jpg" },
+  { id: "Pets", image: "/aloko/chair.jpg" },
+  { id: "Storage", image: "/aloko/sofa.jpg" },
 ] as const;
 
 type AccountType = AlokoRole;
@@ -579,6 +589,8 @@ export function AlokoApp() {
   const [support, setSupport] = useState(false);
   const [homeSections, setHomeSections] = useState<HomeSection[]>([]);
   const [liveServices, setLiveServices] = useState<{ id: string; title: string; areas: string; priceNote: string }[]>([]);
+  const [liveAds, setLiveAds] = useState<{ id: string; slot: string; image: string }[]>([]);
+  const [adSlot, setAdSlot] = useState<"ribbon_top" | "ribbon_mid" | "portrait" | null>(null);
   const [toast, setToast] = useState("");
   const [selected, setSelected] = useState<Listing | null>(null);
   const [mine, setMine] = useState<Listing[]>([]);
@@ -670,6 +682,13 @@ export function AlokoApp() {
       })
       .catch(() => {
         if (!cancel) setLiveServices([]);
+      });
+    listLiveAds()
+      .then((rows) => {
+        if (!cancel) setLiveAds(rows);
+      })
+      .catch(() => {
+        if (!cancel) setLiveAds([]);
       });
     return () => {
       cancel = true;
@@ -1022,9 +1041,18 @@ export function AlokoApp() {
               tape={tapeBits}
               sections={homeSections.filter((section) => section.enabled).map((section) => ({ id: section.id, title: section.title }))}
               services={liveServices}
+              ads={liveAds}
               onService={(service) => {
                 setSupport(true);
                 setToast(`Ask about ${service.title}. Write it in support and Aloko keeps the ticket.`);
+              }}
+              onAdvertise={(slot) => {
+                if (!user) {
+                  setTab("account");
+                  setToast("Sign in to book a banner. Buyers are not charged for shopping.");
+                  return;
+                }
+                setAdSlot(slot);
               }}
             />
           )}
@@ -1348,7 +1376,73 @@ export function AlokoApp() {
           </div>
         )}
 
+        {adSlot && (
+          <AdUpload
+            slot={adSlot}
+            onClose={() => setAdSlot(null)}
+            onDone={(amount) => {
+              setAdSlot(null);
+              setToast(`Saved. ₦${amount.toLocaleString("en-NG")} is waiting. No card was charged. A super admin places the banner after confirming it.`);
+            }}
+            onError={(message) => setToast(message)}
+          />
+        )}
         {toast && <div className="toast">{toast}</div>}
+      </div>
+    </div>
+  );
+}
+
+function AdUpload({
+  slot,
+  onClose,
+  onDone,
+  onError,
+}: {
+  slot: "ribbon_top" | "ribbon_mid" | "portrait";
+  onClose: () => void;
+  onDone: (amount: number) => void;
+  onError: (message: string) => void;
+}) {
+  const [image, setImage] = useState("");
+  const portrait = slot === "portrait";
+  const read = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const raw = String(reader.result || "");
+      const img = new Image();
+      img.onload = () => {
+        const max = portrait ? 900 : 1200;
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
+        setImage(canvas.toDataURL("image/jpeg", 0.72));
+      };
+      img.src = raw;
+    };
+    reader.readAsDataURL(file);
+  };
+  return (
+    <div className="detail" role="dialog" aria-modal="true" aria-label="Book a banner">
+      <div className="detail-card form">
+        <button className="linkish" type="button" onClick={onClose}>← Back</button>
+        <h3>{portrait ? "Portrait banner" : "Flat banner"}</h3>
+        <p className="type-lead">{portrait ? "A tall 9:16 placement before the footer. ₦40,000 for the week." : "A flat placement on the home. ₦15,000 for the week."} Any signed-in account can book an open slot. Aloko confirms the payment, then the banner goes up.</p>
+        <label>
+          Banner photo
+          <input type="file" accept="image/*" onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) read(file);
+          }} />
+        </label>
+        {image && <img src={image} alt="" />}
+        <button className="primary" type="button" disabled={!image} onClick={() => {
+          void submitAd({ data: { slot, image } })
+            .then((result) => onDone(result.amount))
+            .catch((err: unknown) => onError(err instanceof Error ? err.message : "Could not save that banner."));
+        }}>Submit for placement</button>
       </div>
     </div>
   );

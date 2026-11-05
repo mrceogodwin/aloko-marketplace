@@ -293,6 +293,8 @@ const PRICES = {
   ad_category: 15000,
   ad_home: 30000,
   tape_line: 5000,
+  ad_ribbon: 15000,
+  ad_portrait: 40000,
 } as const;
 
 async function paidExtras(sql: Sql, userId: string) {
@@ -1076,7 +1078,7 @@ const DEFAULT_HOME: [string, string][] = [
   ["electronics", "Electronics worth buying"],
   ["furniture", "Furniture around you"],
   ["home", "Home essentials"],
-  ["verified", "Verified sellers"],
+  ["verified", "Still useful"],
   ["services", "Need help clearing out?"],
 ];
 
@@ -1091,6 +1093,7 @@ export const listHome = createServerFn({ method: "GET" }).handler(async () => {
       await sql`insert into aloko_home (id, title, enabled, sort) values (${id}, ${title}, true, ${i + 1}) on conflict (id) do nothing`;
     }
   }
+  await sql`update aloko_home set title = 'Still useful' where id = 'verified' and title = 'Verified sellers'`;
   return sql<HomeSection>`select id, title, enabled, sort from aloko_home order by sort asc, id asc`;
 });
 
@@ -1215,6 +1218,70 @@ export const addTicketNote = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const listLiveAds = createServerFn({ method: "GET" }).handler(async () => {
+  const sql = await getSql();
+  return sql<{ id: string; slot: string; image: string }>`
+    select id, slot, image from aloko_ads
+    where status = 'active' and created_at > now() - interval '7 days'
+    order by created_at desc
+  `;
+});
+
+export const listAdQueue = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    const roles = await rolesOf(sql, context.userId);
+    if (!roles.includes("super_admin")) throw new Error("Only a super admin can manage placements.");
+    return sql<{ id: string; slot: string; image: string; status: string; orderId: string | null; amount: number | null }>`
+      select a.id, a.slot, a.image, a.status, o.id as "orderId", o.amount
+      from aloko_ads a
+      left join aloko_orders o on o.listing_id = a.id and o.status = 'unpaid'
+      where a.status = 'pending'
+      order by a.created_at desc
+      limit 20
+    `;
+  });
+
+export const submitAd = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { slot: string; image: string }) => {
+    const slot = input?.slot === "ribbon_mid" || input?.slot === "portrait" ? input.slot : "ribbon_top";
+    const image = String(input?.image ?? "");
+    if (!image.startsWith("data:image/") || image.length > 500_000) throw new Error("Use a banner photo under 400KB.");
+    return { slot, image };
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    await assertLive(sql, context.userId);
+    const taken = await sql<{ id: string }>`
+      select id from aloko_ads where slot = ${data.slot} and status = 'active' and created_at > now() - interval '7 days' limit 1
+    `;
+    if (taken[0]) throw new Error("That placement is booked this week.");
+    const id = crypto.randomUUID();
+    await sql`insert into aloko_ads (id, user_id, slot, image) values (${id}, ${context.userId}, ${data.slot}, ${data.image})`;
+    const kind = data.slot === "portrait" ? "ad_portrait" : "ad_ribbon";
+    const amount = PRICES[kind];
+    await sql`
+      insert into aloko_orders (id, user_id, kind, amount, listing_id)
+      values (${crypto.randomUUID()}, ${context.userId}, ${kind}, ${amount}, ${id})
+    `;
+    return { id, amount };
+  });
+
+export const rejectAd = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((id: string) => text(id, 80))
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const roles = await rolesOf(sql, context.userId);
+    if (!roles.includes("super_admin")) throw new Error("Only a super admin can decline a placement.");
+    await sql`update aloko_ads set status = 'rejected' where id = ${data}`;
+    await sql`update aloko_orders set status = 'cancelled' where listing_id = ${data} and status = 'unpaid' and kind in ('ad_ribbon', 'ad_portrait')`;
+    await audit(sql, context.userId, "reject-ad", data);
+    return { ok: true };
+  });
+
 export const saveRadius = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((km: number) => {
@@ -1282,6 +1349,9 @@ export const confirmOrder = createServerFn({ method: "POST" })
     }
     if (order.kind === "tape_line" && order.listing_id) {
       await sql`update aloko_tape set status = 'pending' where id = ${order.listing_id} and status = 'hold'`;
+    }
+    if ((order.kind === "ad_ribbon" || order.kind === "ad_portrait") && order.listing_id) {
+      await sql`update aloko_ads set status = 'active' where id = ${order.listing_id} and status = 'pending'`;
     }
     await audit(sql, context.userId, "confirm-payment", order.id);
     return { ok: true };

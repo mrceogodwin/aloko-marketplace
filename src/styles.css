@@ -2264,11 +2264,103 @@
   border-top: 1px solid #ffffff14;
 }
 
+.ribbon-ad,
+.portrait-ad {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  width: calc(100% - 28px);
+  margin: 10px 14px;
+  border: 1px solid #12301822;
+  background:
+    linear-gradient(135deg, #ffffff 0%, #f3f8ea 60%, #e7f6c4 100%);
+  color: #123018;
+  text-align: left;
+  padding: 12px 14px;
+  overflow: hidden;
+}
+
+.ribbon-ad {
+  min-height: 72px;
+  border-radius: 16px;
+}
+
+.portrait-ad {
+  aspect-ratio: 9 / 13;
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 100% 0%, #1f8a3d 0%, transparent 42%),
+    #123018;
+  color: white;
+  border-color: #ffffff22;
+}
+
+.ribbon-ad strong,
+.portrait-ad strong {
+  font-family: var(--font-display);
+  font-size: 16px;
+}
+
+.ribbon-ad span,
+.portrait-ad span,
+.ribbon-ad em,
+.portrait-ad em {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ribbon-ad.live,
+.portrait-ad.live {
+  padding: 0;
+  background: #123018;
+}
+
+.ribbon-ad.live img,
+.portrait-ad.live img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.foot-art {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 150px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.foot-art .cloth {
+  position: absolute;
+  left: -6px;
+  bottom: 18px;
+  width: 108px;
+  opacity: 0.85;
+}
+
+.foot-art .wheel {
+  position: absolute;
+  right: -18px;
+  bottom: -12px;
+  width: 128px;
+  opacity: 0.9;
+}
+
 .copy {
   display: block;
   margin-top: 12px;
   color: #9aaf9f;
   text-align: center;
+}
+
+.copy,
+.powered {
+  position: relative;
+  z-index: 1;
 }
 
 .to-top {
