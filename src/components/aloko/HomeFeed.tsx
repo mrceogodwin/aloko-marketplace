@@ -225,9 +225,6 @@ export function HomeFeed({
                 {shown.length > split && <em>{shown.slice(split)}</em>}
                 <span className="caret" />
               </h1>
-              <div className="pips" aria-hidden="true">
-                {LINES.map((_, index) => <i key={index} className={index <= line ? "on" : ""} />)}
-              </div>
               <div className="hero-actions">
                 <button className="btn-sell" type="button" onClick={onSell}><span>Start<br />Selling</span><span className="arrow">→</span></button>
                 <button className="btn-browse" type="button" onClick={() => onBrowse("all", "All")}><span>Browse<br />Listings</span></button>

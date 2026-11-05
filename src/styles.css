@@ -372,9 +372,6 @@
 .hero h1 em {
   font-style: normal;
   color: var(--color-lime);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-decoration-thickness: 2px;
 }
 
 .hero-actions {
@@ -1675,23 +1672,6 @@
 
 @keyframes blink {
   50% { opacity: 0; }
-}
-
-.pips {
-  display: flex;
-  gap: 4px;
-  margin-top: 8px;
-}
-
-.pips i {
-  width: 12px;
-  height: 3px;
-  border-radius: 99px;
-  background: #ffffff33;
-}
-
-.pips i.on {
-  background: #c6f135;
 }
 
 .hero-count {
