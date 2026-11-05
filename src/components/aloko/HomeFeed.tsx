@@ -368,7 +368,7 @@ export function HomeFeed({
             const body = section.id === "services" ? (
               services.length === 0 ? null : (
               <section key={section.id} className="featured">
-                <div className="section-head"><h2>{section.title}</h2></div>
+                <Sep title={section.title} line="People who clear homes and offices." onAll={onClearout} />
                 <div className="h-row">
                   {services.map((service) => (
                     <button key={service.id} className="service-card" type="button" onClick={() => onService(service)}>
@@ -520,6 +520,34 @@ function AdSlot({
   );
 }
 
+function Sep({ title, line, onAll }: { title: string; line?: string; onAll: () => void }) {
+  return (
+    <div className="lane-sep">
+      <div>
+        <h2>{title}</h2>
+        {line ? <p>{line}</p> : null}
+      </div>
+      <button type="button" onClick={onAll}>See all →</button>
+    </div>
+  );
+}
+
+const LANE_LINE: Record<string, string> = {
+  "Just listed": "Fresh from people and shops.",
+  "Pass it on": "Free, if you can collect it.",
+  "Near you": "Around the area you chose.",
+  "This week’s picks": "Useful things from the live list.",
+  "Clear-out finds": "Lots from a home or an office.",
+  "Price drops": "The seller lowered the price.",
+  "Good as new": "Marked like new by the seller.",
+  "Second life": "Pre-loved, and ready to use.",
+  "Wardrobe reboot": "Clothes, shoes and bags.",
+  "Electronics worth buying": "Phones, laptops and the rest.",
+  "Furniture around you": "Chairs, sofas and tables.",
+  "Home essentials": "For a room that still needs things.",
+  "Still useful": "Fair condition. Not for the bin.",
+};
+
 function Row({
   title,
   note,
@@ -540,10 +568,7 @@ function Row({
   if (items.length === 0) return null;
   return (
     <section className="featured">
-      <div className="section-head">
-        <h2>{title}{note ? <small> {note}</small> : null}</h2>
-        <button className="linkish" type="button" onClick={onAll}>See all</button>
-      </div>
+      <Sep title={title} line={note || LANE_LINE[title]} onAll={onAll} />
       <div className="h-row">
         {items.map((item) => (
           <Card key={item.id} item={item} saved={saved.includes(item.id)} onOpen={onOpen} onSave={onSave} />

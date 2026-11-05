@@ -604,9 +604,46 @@
   height: 28px;
 }
 
-.section-head {
+.lane-sep {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
-  padding: 2px 14px 6px;
+  gap: 12px;
+  min-height: 72px;
+  margin: 12px 14px 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  color: #f4f6ee;
+  background:
+    linear-gradient(90deg, rgba(7, 26, 17, 0.9), rgba(7, 26, 17, 0.78)),
+    url("/aloko/doodle-dark.jpg") center / 240px repeat;
+  overflow: hidden;
+}
+
+.lane-sep h2 {
+  margin: 0;
+  color: white;
+  font-family: var(--font-display);
+  font-size: 16px;
+  letter-spacing: -0.3px;
+}
+
+.lane-sep p {
+  margin: 2px 0 0;
+  color: #d7e4d4;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.lane-sep button {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: #c6f135;
+  font-weight: 800;
+  font-size: 13px;
+  white-space: nowrap;
+  padding: 6px 0;
 }
 
 .section-head h2 {
