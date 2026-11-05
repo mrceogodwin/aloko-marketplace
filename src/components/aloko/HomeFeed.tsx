@@ -368,7 +368,7 @@ export function HomeFeed({
             const body = section.id === "services" ? (
               services.length === 0 ? null : (
               <section key={section.id} className="featured">
-                <Sep title={section.title} line="People who clear homes and offices." onAll={onClearout} />
+                <Sep title={section.title} onAll={onClearout} />
                 <div className="h-row">
                   {services.map((service) => (
                     <button key={service.id} className="service-card" type="button" onClick={() => onService(service)}>
@@ -520,18 +520,6 @@ function AdSlot({
   );
 }
 
-function Sep({ title, line, onAll }: { title: string; line?: string; onAll: () => void }) {
-  return (
-    <div className="lane-sep">
-      <div>
-        <h2>{title}</h2>
-        {line ? <p>{line}</p> : null}
-      </div>
-      <button type="button" onClick={onAll}>See all →</button>
-    </div>
-  );
-}
-
 const LANE_LINE: Record<string, string> = {
   "Just listed": "Fresh from people and shops.",
   "Pass it on": "Free, if you can collect it.",
@@ -546,7 +534,39 @@ const LANE_LINE: Record<string, string> = {
   "Furniture around you": "Chairs, sofas and tables.",
   "Home essentials": "For a room that still needs things.",
   "Still useful": "Fair condition. Not for the bin.",
+  "Need help clearing out?": "People who clear homes and offices.",
 };
+
+const LANE_MARK: Record<string, { mark: string; tone: "lime" | "cream" | "leaf" }> = {
+  "Just listed": { mark: "New", tone: "lime" },
+  "Pass it on": { mark: "Free", tone: "cream" },
+  "Near you": { mark: "Near", tone: "leaf" },
+  "This week’s picks": { mark: "Pick", tone: "lime" },
+  "Clear-out finds": { mark: "Lot", tone: "cream" },
+  "Price drops": { mark: "Cut", tone: "leaf" },
+  "Good as new": { mark: "Fine", tone: "lime" },
+  "Second life": { mark: "2nd", tone: "cream" },
+  "Wardrobe reboot": { mark: "Fit", tone: "leaf" },
+  "Electronics worth buying": { mark: "Tech", tone: "lime" },
+  "Furniture around you": { mark: "Room", tone: "cream" },
+  "Home essentials": { mark: "Home", tone: "leaf" },
+  "Still useful": { mark: "Fair", tone: "cream" },
+  "Need help clearing out?": { mark: "Crew", tone: "lime" },
+};
+
+function Sep({ title, line, onAll }: { title: string; line?: string; onAll: () => void }) {
+  const meta = LANE_MARK[title] || { mark: title.slice(0, 3), tone: "leaf" as const };
+  return (
+    <div className={`lane-sep tone-${meta.tone}`}>
+      <span className="lane-mark">{meta.mark}</span>
+      <div>
+        <h2>{title}</h2>
+        {line ? <p>{line}</p> : null}
+      </div>
+      <button type="button" onClick={onAll}>See all</button>
+    </div>
+  );
+}
 
 function Row({
   title,
