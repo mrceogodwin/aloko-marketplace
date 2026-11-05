@@ -1455,6 +1455,12 @@
   background: #f4f6ee;
   padding: 8px 14px 0;
   scrollbar-width: none;
+  transition: transform 0.22s ease;
+}
+
+.kind-tabs.hide {
+  transform: translateY(-120%);
+  pointer-events: none;
 }
 
 .kind-tabs button {
@@ -1719,10 +1725,9 @@
 }
 
 .aloko-foot {
-  margin: 8px 12px 12px;
-  padding: 16px;
-  border-radius: 18px;
-  background: #012115;
+  margin: 18px 0 0;
+  padding: 18px 16px 14px;
+  background: #0c1c14;
   color: white;
 }
 
@@ -1732,14 +1737,132 @@
 }
 
 .aloko-foot p {
-  margin: 0 0 10px;
+  margin: 0;
   color: #d5e4d6;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.45;
 }
 
-.aloko-foot a {
+.aloko-foot p.clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.see-more,
+.more-options {
+  border: 0;
+  background: transparent;
   color: #c6f135;
   font-weight: 800;
+  padding: 8px 0;
+  width: auto;
+}
+
+.more-options {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  color: white;
+  border-top: 1px solid #ffffff22;
+  margin-top: 8px;
+  padding-top: 12px;
+}
+
+.install-btn {
+  width: 100%;
+  min-height: 46px;
+  margin: 8px 0 12px;
+  border: 0;
+  border-radius: 14px;
+  background: #c6f135;
+  color: #123018;
+  font-weight: 800;
+  box-shadow: 0 3px 0 #7ea000;
+}
+
+.support {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: white;
+  text-decoration: none;
+  margin: 6px 0 12px;
+}
+
+.support span {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: white;
+  color: #123018;
+  font-weight: 800;
+}
+
+.support b {
+  display: grid;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.support small {
+  color: #d5e4d6;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.deals b {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.deals div {
+  display: flex;
+}
+
+.deals input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  border: 0;
+  border-radius: 10px 0 0 10px;
+  padding: 0 12px;
+  font: inherit;
+}
+
+.deals button {
+  border: 0;
+  border-radius: 0 10px 10px 0;
+  background: #c6f135;
+  color: #123018;
+  font-weight: 800;
+  padding: 0 14px;
+}
+
+.option-list {
+  display: grid;
+}
+
+.option-list button {
+  border: 0;
+  background: transparent;
+  color: white;
+  text-align: left;
+  font-weight: 700;
+  padding: 10px 0;
+  border-top: 1px solid #ffffff14;
+}
+
+.copy {
+  display: block;
+  margin-top: 12px;
+  color: #9aaf9f;
+  text-align: center;
 }
 
 .to-top {

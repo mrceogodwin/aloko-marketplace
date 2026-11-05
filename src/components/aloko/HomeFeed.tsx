@@ -75,6 +75,9 @@ export function HomeFeed({
   onSell,
   onNear,
   onClearout,
+  onInstall,
+  onPricing,
+  onAccount,
 }: {
   items: HomeItem[];
   saved: string[];
@@ -85,8 +88,16 @@ export function HomeFeed({
   onSell: () => void;
   onNear: () => void;
   onClearout: () => void;
+  onInstall: () => void;
+  onPricing: () => void;
+  onAccount: () => void;
 }) {
   const [lane, setLane] = useState<Lane>("all");
+  const [tabsOn, setTabsOn] = useState(true);
+  const [about, setAbout] = useState(false);
+  const [options, setOptions] = useState(false);
+  const [mail, setMail] = useState("");
+  const [listed, setListed] = useState(false);
   const [line, setLine] = useState(0);
   const [count, setCount] = useState(LINES[0].a.length + 1 + LINES[0].b.length);
   const [storyDone, setStoryDone] = useState(false);
@@ -94,6 +105,21 @@ export function HomeFeed({
   const [paused, setPaused] = useState(false);
   const startX = useRef(0);
   const reduced = useRef(false);
+  const lastY = useRef(0);
+
+  useEffect(() => {
+    const main = document.querySelector(".aloko-main");
+    if (!main) return;
+    const onScroll = () => {
+      const y = main.scrollTop;
+      if (y < 28) setTabsOn(true);
+      else if (y > lastY.current + 10) setTabsOn(false);
+      else if (y < lastY.current - 10) setTabsOn(true);
+      lastY.current = y;
+    };
+    main.addEventListener("scroll", onScroll, { passive: true });
+    return () => main.removeEventListener("scroll", onScroll);
+  }, []);
 
   const pool = lane === "all" || lane === "service" ? items : items.filter((item) => item.kind === lane);
   const paid = items.filter((item) => item.featured);
@@ -145,7 +171,7 @@ export function HomeFeed({
 
   return (
     <div className="home-fit">
-      <div className="kind-tabs" role="tablist">
+      <div className={tabsOn ? "kind-tabs" : "kind-tabs hide"} role="tablist">
         {([
           ["all", "All"],
           ["sale", "For sale"],
@@ -317,8 +343,44 @@ export function HomeFeed({
 
       <footer className="aloko-foot">
         <h2>Aloko</h2>
-        <p>Sell it. Give it. Pass it on. The place Nigerians go when something still has a life in it.</p>
-        <a href="mailto:hello@aloko.ng">hello@aloko.ng</a>
+        <p className={about ? "" : "clamp"}>
+          Sell it. Give it. Pass it on. Aloko is Nigeria’s place for things that still have a life: sell what you no longer need, give it away, pass a box to many people, or book someone to clear the house. You pay the seller. Aloko does not take that money.
+        </p>
+        <button className="see-more" type="button" onClick={() => setAbout((open) => !open)}>{about ? "See less" : "See more"}</button>
+        <button className="install-btn" type="button" onClick={onInstall}>Download our app</button>
+        <a className="support" href="mailto:hello@aloko.ng">
+          <span>✉</span>
+          <b>Email support<small>hello@aloko.ng</small></b>
+        </a>
+        <form className="deals" onSubmit={(event) => {
+          event.preventDefault();
+          if (!mail.includes("@")) return;
+          const key = "aloko-finds";
+          const old = JSON.parse(localStorage.getItem(key) || "[]") as string[];
+          if (!old.includes(mail)) localStorage.setItem(key, JSON.stringify([...old, mail]));
+          setListed(true);
+          setMail("");
+        }}>
+          <b>Get the latest finds</b>
+          {listed ? <p>Saved on this phone. The mail list is not sending yet.</p> : (
+            <div>
+              <input aria-label="Email address" placeholder="Email address" type="email" required value={mail} onChange={(event) => setMail(event.target.value)} />
+              <button type="submit">Subscribe</button>
+            </div>
+          )}
+        </form>
+        <button className="more-options" type="button" aria-expanded={options} onClick={() => setOptions((open) => !open)}>
+          More options <span>{options ? "⌃" : "⌄"}</span>
+        </button>
+        {options && (
+          <div className="option-list">
+            <button type="button" onClick={onPricing}>Pricing</button>
+            <button type="button" onClick={onSell}>Start selling</button>
+            <button type="button" onClick={onAccount}>Account</button>
+            <button type="button" onClick={onClearout}>Book a clear-out</button>
+          </div>
+        )}
+        <small className="copy">Copyright © 2026 Aloko. Sell it. Give it. Pass it on.</small>
       </footer>
       <button className="to-top" type="button" onClick={() => document.querySelector(".aloko-main")?.scrollTo({ top: 0, behavior: "smooth" })}>↑</button>
     </div>

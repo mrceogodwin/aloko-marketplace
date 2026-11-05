@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { GROK_PROVIDERS, authClient, signIn } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { activateRole, createListing, decideListing, getDashboard, listLiveListings, openThread, placeOrder, recordView, saveRadius, toggleSave, type AlokoRole, type AlokoRow, type DashboardData } from "@/lib/aloko.functions";
@@ -584,6 +584,32 @@ export function AlokoApp() {
   const [askNear, setAskNear] = useState(false);
   const [asMap, setAsMap] = useState(false);
   const [ready, setReady] = useState(false);
+  const installEvent = useRef<Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> } | null>(null);
+
+  useEffect(() => {
+    const onPrompt = (event: Event) => {
+      event.preventDefault();
+      installEvent.current = event as Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
+    };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    return () => window.removeEventListener("beforeinstallprompt", onPrompt);
+  }, []);
+
+  const installApp = async () => {
+    const event = installEvent.current;
+    if (event) {
+      await event.prompt();
+      const choice = await event.userChoice;
+      if (choice.outcome === "accepted") {
+        installEvent.current = null;
+        setToast("Aloko is on your home screen.");
+      }
+      return;
+    }
+    const standalone = window.matchMedia("(display-mode: standalone)").matches || ("standalone" in navigator && Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
+    setToast(standalone ? "Aloko is already on this home screen." : "On iPhone, tap Share, then Add to Home Screen. Apple blocks a silent add.");
+  };
 
   useEffect(() => {
     setSaved(loadSaved());
@@ -932,6 +958,9 @@ export function AlokoApp() {
                 setTab("buy");
               }}
               onClearout={() => setToast("Decluttering bookings open with a seller message.")}
+              onInstall={() => void installApp()}
+              onPricing={() => { setPricing(true); setDesk(false); }}
+              onAccount={() => setTab("account")}
             />
           )}
 
