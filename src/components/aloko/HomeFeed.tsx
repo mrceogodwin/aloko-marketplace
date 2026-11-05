@@ -396,8 +396,40 @@ export function HomeFeed({
         <p className={about ? "" : "clamp"}>
           Sell it. Give it. Pass it on. Aloko is Nigeria’s place for things that still have a life: sell what you no longer need, give it away, pass a box to many people, or book someone to clear the house. You pay the seller. Aloko does not take that money.
         </p>
-        <button className="see-more" type="button" onClick={() => setAbout((open) => !open)}>{about ? "See less" : "See more"}</button>
-        <button className="install-btn" type="button" onClick={onInstall}>Download our app</button>
+        <button className="see-more" type="button" onClick={() => setAbout((open) => !open)}>{about ? "See less" : "See more →"}</button>
+        <section className="devices" aria-label="Get Aloko on your devices">
+          <div className="devices-copy">
+            <h2>Get Aloko <em>on your devices</em></h2>
+            <p>One account. Buy, sell, give and clear out anywhere.</p>
+          </div>
+          <div className="device-row">
+            <article className="device web">
+              <i className="device-check" aria-hidden="true">✓</i>
+              <span className="device-ico" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.7" /><path d="M4 12h16M12 4c2.2 2.4 3.3 5 3.3 8s-1.1 5.6-3.3 8c-2.2-2.4-3.3-5-3.3-8s1.1-5.6 3.3-8z" fill="none" stroke="currentColor" strokeWidth="1.7" /></svg>
+              </span>
+              <strong>Web App</strong>
+              <small>Available now</small>
+              <button type="button" onClick={onInstall}>Open Web App ↗</button>
+            </article>
+            <article className="device soon">
+              <span className="device-ico" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M7 8.5h10v8.2a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V8.5z" fill="none" stroke="currentColor" strokeWidth="1.7" /><path d="M9 8.5 8 5.5M15 8.5l1-3M9 18.7v1.3M15 18.7v1.3" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
+              </span>
+              <strong>Android</strong>
+              <small>Coming soon</small>
+              <span className="soon-pill">Coming Soon</span>
+            </article>
+            <article className="device soon">
+              <span className="device-ico" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M16.2 7.2c.5-.7.9-1.6.8-2.6-.8.1-1.8.6-2.3 1.3-.5.6-.9 1.6-.8 2.5.9.1 1.8-.4 2.3-1.2zM16.9 9.4c-1.3-.1-2.4.7-3 .7-.6 0-1.6-.7-2.6-.7-1.3 0-2.6.8-3.3 2-1.4 2.4-.4 6 1 8 .7.9 1.5 2 2.5 1.9 1-.1 1.4-.6 2.6-.6s1.5.6 2.6.6 1.8-1 2.4-1.9c.8-1.1 1.1-2.2 1.1-2.3-2.4-1-2.1-4.4.7-5.3-.7-1.1-1.8-1.5-2.4-1.4z" fill="currentColor" /></svg>
+              </span>
+              <strong>iOS</strong>
+              <small>Coming soon</small>
+              <span className="soon-pill">Coming Soon</span>
+            </article>
+          </div>
+        </section>
         <a className="support" href="mailto:hello@aloko.ng">
           <span>✉</span>
           <b>Email support<small>hello@aloko.ng</small></b>
@@ -431,6 +463,7 @@ export function HomeFeed({
           </div>
         )}
         <small className="copy">Copyright © 2026 Aloko. Sell it. Give it. Pass it on.</small>
+        <small className="powered">Powered by <b>Cookit Technologies Ltd.</b></small>
       </footer>
       <button className={showTop ? "to-top show" : "to-top"} type="button" aria-label="Back to top" onClick={() => document.querySelector(".aloko-main")?.scrollTo({ top: 0, behavior: "smooth" })}>↑</button>
     </div>
