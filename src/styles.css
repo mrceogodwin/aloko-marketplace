@@ -368,8 +368,8 @@
 }
 
 .home-fit {
-  background: linear-gradient(180deg, transparent calc(100% - 40px), #0c1c14 calc(100% - 40px), #012115 100%);
-  padding-bottom: 40px;
+  background: linear-gradient(to top, #012115 0, rgba(1, 33, 21, 0.45) 36px, rgba(1, 33, 21, 0) 96px);
+  padding-bottom: 8px;
 }
 
 .aloko-main {
@@ -607,79 +607,36 @@
 .lane-sep {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  min-height: 74px;
-  margin: 14px 14px 8px;
-  padding: 10px 12px;
-  border-radius: 18px;
+  min-height: 36px;
+  margin: 8px 14px 6px;
+  padding: 6px 12px;
+  border-radius: 12px;
   color: #f4f6ee;
   background:
-    linear-gradient(100deg, rgba(6, 24, 16, 0.92) 0%, rgba(8, 32, 22, 0.8) 100%),
-    url("/aloko/doodle-dark.jpg") center / 220px repeat;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    linear-gradient(90deg, rgba(8, 28, 18, 0.94), rgba(8, 28, 18, 0.88)),
+    url("/aloko/doodle-dark.jpg") center / 180px repeat;
   overflow: hidden;
-}
-
-.lane-mark {
-  flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border-radius: 13px;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.lane-sep.tone-lime .lane-mark {
-  background: #c6f135;
-  color: #123018;
-}
-
-.lane-sep.tone-cream .lane-mark {
-  background: #f3f6ea;
-  color: #123018;
-}
-
-.lane-sep.tone-leaf .lane-mark {
-  background: transparent;
-  color: #c6f135;
-  box-shadow: inset 0 0 0 1.5px rgba(198, 241, 53, 0.7);
 }
 
 .lane-sep h2 {
   margin: 0;
   color: white;
   font-family: var(--font-display);
-  font-size: 15px;
-  letter-spacing: -0.3px;
-  line-height: 1.15;
-}
-
-.lane-sep p {
-  margin: 3px 0 0;
-  color: #c5d4c6;
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1.3;
-}
-
-.lane-sep > div {
-  flex: 1;
-  min-width: 0;
+  font-size: 14px;
+  letter-spacing: -0.2px;
+  line-height: 1.1;
 }
 
 .lane-sep button {
   flex: 0 0 auto;
-  border: 1px solid rgba(198, 241, 53, 0.55);
+  border: 0;
   background: transparent;
   color: #c6f135;
   font-weight: 800;
   font-size: 12px;
-  border-radius: 999px;
-  padding: 6px 10px;
+  padding: 0;
   white-space: nowrap;
 }
 
@@ -1549,9 +1506,9 @@
 .dock {
   position: relative;
   z-index: 4;
-  margin-top: -28px;
-  padding-top: 28px;
-  background: linear-gradient(180deg, rgba(1, 33, 21, 0) 0%, rgba(1, 33, 21, 0.22) 42%, rgba(1, 33, 21, 0.72) 74%, #012115 100%);
+  margin-top: -20px;
+  padding-top: 20px;
+  background: linear-gradient(to top, #012115 0%, #012115 58%, rgba(1, 33, 21, 0) 100%);
   pointer-events: none;
 }
 
@@ -2059,7 +2016,7 @@
 .aloko-foot {
   position: relative;
   margin: 18px 0 0;
-  padding: 18px 16px 100px;
+  padding: 18px 16px 16px;
   background:
     radial-gradient(120% 80px at 100% 0%, #1f8a3d 0%, transparent 58%),
     #0c1c14;
@@ -2438,44 +2395,6 @@
   background: white;
   border-radius: 12px;
   padding: 10px 12px;
-}
-
-.foot-decor {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 92px;
-  pointer-events: none;
-  z-index: 0;
-  overflow: hidden;
-}
-
-.foot-mat,
-.foot-bike {
-  position: absolute;
-  bottom: 0;
-  object-fit: contain;
-  pointer-events: none;
-  mix-blend-mode: lighten;
-  opacity: 0.72;
-}
-
-.foot-mat {
-  left: -22px;
-  width: 108px;
-  transform: rotate(10deg);
-}
-
-.foot-bike {
-  right: 42px;
-  width: 132px;
-  transform: rotate(-6deg);
-}
-
-@media (max-width: 380px) {
-  .foot-mat { width: 84px; }
-  .foot-bike { width: 104px; right: 36px; }
 }
 
 .copy {

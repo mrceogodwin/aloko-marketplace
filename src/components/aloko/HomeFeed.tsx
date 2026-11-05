@@ -418,10 +418,6 @@ export function HomeFeed({
           </svg>
           Aloko
         </h2>
-        <div className="foot-decor" aria-hidden="true">
-          <img className="foot-mat" src="/aloko/mat.jpg" alt="" />
-          <img className="foot-bike" src="/aloko/bicycle.jpg" alt="" />
-        </div>
         <p className={about ? "" : "clamp"}>
           Sell it. Give it. Pass it on. Aloko is Nigeria’s place for things that still have a life: sell what you no longer need, give it away, pass a box to many people, or book someone to clear the house. You pay the seller. Aloko does not take that money.
         </p>
@@ -520,50 +516,11 @@ function AdSlot({
   );
 }
 
-const LANE_LINE: Record<string, string> = {
-  "Just listed": "Fresh from people and shops.",
-  "Pass it on": "Free, if you can collect it.",
-  "Near you": "Around the area you chose.",
-  "This week’s picks": "Useful things from the live list.",
-  "Clear-out finds": "Lots from a home or an office.",
-  "Price drops": "The seller lowered the price.",
-  "Good as new": "Marked like new by the seller.",
-  "Second life": "Pre-loved, and ready to use.",
-  "Wardrobe reboot": "Clothes, shoes and bags.",
-  "Electronics worth buying": "Phones, laptops and the rest.",
-  "Furniture around you": "Chairs, sofas and tables.",
-  "Home essentials": "For a room that still needs things.",
-  "Still useful": "Fair condition. Not for the bin.",
-  "Need help clearing out?": "People who clear homes and offices.",
-};
-
-const LANE_MARK: Record<string, { mark: string; tone: "lime" | "cream" | "leaf" }> = {
-  "Just listed": { mark: "New", tone: "lime" },
-  "Pass it on": { mark: "Free", tone: "cream" },
-  "Near you": { mark: "Near", tone: "leaf" },
-  "This week’s picks": { mark: "Pick", tone: "lime" },
-  "Clear-out finds": { mark: "Lot", tone: "cream" },
-  "Price drops": { mark: "Cut", tone: "leaf" },
-  "Good as new": { mark: "Fine", tone: "lime" },
-  "Second life": { mark: "2nd", tone: "cream" },
-  "Wardrobe reboot": { mark: "Fit", tone: "leaf" },
-  "Electronics worth buying": { mark: "Tech", tone: "lime" },
-  "Furniture around you": { mark: "Room", tone: "cream" },
-  "Home essentials": { mark: "Home", tone: "leaf" },
-  "Still useful": { mark: "Fair", tone: "cream" },
-  "Need help clearing out?": { mark: "Crew", tone: "lime" },
-};
-
-function Sep({ title, line, onAll }: { title: string; line?: string; onAll: () => void }) {
-  const meta = LANE_MARK[title] || { mark: title.slice(0, 3), tone: "leaf" as const };
+function Sep({ title, onAll }: { title: string; onAll: () => void }) {
   return (
-    <div className={`lane-sep tone-${meta.tone}`}>
-      <span className="lane-mark">{meta.mark}</span>
-      <div>
-        <h2>{title}</h2>
-        {line ? <p>{line}</p> : null}
-      </div>
-      <button type="button" onClick={onAll}>See all</button>
+    <div className="lane-sep">
+      <h2>{title}</h2>
+      <button type="button" onClick={onAll}>See all →</button>
     </div>
   );
 }
@@ -588,7 +545,7 @@ function Row({
   if (items.length === 0) return null;
   return (
     <section className="featured">
-      <Sep title={title} line={note || LANE_LINE[title]} onAll={onAll} />
+      <Sep title={title} onAll={onAll} />
       <div className="h-row">
         {items.map((item) => (
           <Card key={item.id} item={item} saved={saved.includes(item.id)} onOpen={onOpen} onSave={onSave} />
