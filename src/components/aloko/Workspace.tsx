@@ -9,6 +9,8 @@ import {
   grantModerator,
   placeOrder,
   confirmOrder,
+  postTape,
+  decideTape,
   reviewBusiness,
   saveMyProfile,
   setActiveRole,
@@ -141,6 +143,7 @@ export function Workspace({
           <p className="type-lead">{data.creditsLeft} catalogue spaces left. A confirmed business month opens 100. No card is charged in the app.</p>
           <button className="ghost" type="button" onClick={() => run(placeOrder({ data: { kind: "business_month" } }))}>Business month · ₦12,000</button>
           <button className="primary" type="button" onClick={onSell}>Add product</button>
+          <TapeDesk free={data.tapeFree} lines={data.tape} onRefresh={onRefresh} onError={onError} />
           <ListingList listings={data.listings} onRefresh={onRefresh} onError={onError} />
         </>
       )}
@@ -148,6 +151,7 @@ export function Workspace({
       {role === "service" && (
         <>
           <button className="ghost" type="button" onClick={() => run(placeOrder({ data: { kind: "service_month" } }))}>Service month · ₦6,000</button>
+          <TapeDesk free={data.tapeFree} lines={data.tape} onRefresh={onRefresh} onError={onError} />
           <form className="form" onSubmit={(event) => { event.preventDefault(); run(createService({ data: service }).then(() => setService({ title: "", description: "", areas: service.areas, priceNote: service.priceNote }))); }}>
             <label>Service<input value={service.title} onChange={(event) => setService({ ...service, title: event.target.value })} placeholder="Home decluttering" /></label>
             <label>What you do<textarea value={service.description} onChange={(event) => setService({ ...service, description: event.target.value })} /></label>
@@ -193,6 +197,19 @@ export function Workspace({
                 <div className="queue-actions">
                   <button className="primary" type="button" onClick={() => run(decideService({ data: { id: item.id, status: "active" } }))}>Approve</button>
                   <button className="ghost" type="button" onClick={() => run(decideService({ data: { id: item.id, status: "rejected" } }))}>Reject</button>
+                </div>
+              </div>
+            </article>
+          ))}
+          <h3 className="mine-head">Tape waiting</h3>
+          {data.tapeQueue.length === 0 ? <p className="type-lead">No tape lines are waiting. A paid line appears here only after the ₦5,000 is confirmed.</p> : data.tapeQueue.map((item) => (
+            <article key={item.id} className="queue-card">
+              <div>
+                <strong>{item.seller}</strong>
+                <span>{item.body} · {item.kind}</span>
+                <div className="queue-actions">
+                  <button className="primary" type="button" onClick={() => run(decideTape({ data: { id: item.id, status: "active" } }))}>Approve</button>
+                  <button className="ghost" type="button" onClick={() => run(decideTape({ data: { id: item.id, status: "rejected" } }))}>Reject</button>
                 </div>
               </div>
             </article>
@@ -244,6 +261,27 @@ export function Workspace({
 
       <UserButton />
     </div>
+  );
+}
+
+function TapeDesk({ free, lines, onRefresh, onError }: { free: number; lines: DashboardData["tape"]; onRefresh: () => void; onError: (message: string) => void }) {
+  const [body, setBody] = useState("");
+  return (
+    <form className="form" onSubmit={(event) => {
+      event.preventDefault();
+      void postTape({ data: body })
+        .then(() => {
+          setBody("");
+          onRefresh();
+        })
+        .catch((err: unknown) => onError(err instanceof Error ? err.message : "That line did not send."));
+    }}>
+      <h3 className="mine-head">NOW tape</h3>
+      <p className="type-lead">{free} free lines left this week. After that, a line is ₦5,000. It stays off the tape until Aloko approves the words. A paid line also waits until the payment is confirmed.</p>
+      <label>Line<input value={body} maxLength={80} onChange={(event) => setBody(event.target.value)} placeholder="Clear-outs in Lekki this week" /></label>
+      <button className="primary" type="submit">Send this line</button>
+      {lines.map((item) => <p key={item.id} className="type-lead">{item.body} · {item.kind} · {item.status}</p>)}
+    </form>
   );
 }
 

@@ -100,6 +100,7 @@ export function HomeFeed({
 }) {
   const [lane, setLane] = useState<Lane>("all");
   const [tabsOn, setTabsOn] = useState(true);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [about, setAbout] = useState(false);
   const [options, setOptions] = useState(false);
   const [mail, setMail] = useState("");
@@ -177,16 +178,23 @@ export function HomeFeed({
 
   return (
     <div className="home-fit">
-      <div className={tabsOn ? "kind-tabs" : "kind-tabs hide"} role="tablist">
-        {([
-          ["all", "All"],
-          ["sale", "For sale"],
-          ["giveaway", "Free"],
-          ["bulk", "Bulk"],
-          ["service", "Services"],
-        ] as const).map(([id, label]) => (
-          <button key={id} className={lane === id ? "on" : ""} type="button" onClick={() => setLane(id)}>{label}</button>
-        ))}
+      <div className={tabsOn ? "lane-bar" : "lane-bar hide"}>
+        <button className="filter-btn" type="button" aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)}>
+          Filter · {lane === "all" ? "All" : lane === "sale" ? "For sale" : lane === "giveaway" ? "Free" : lane === "bulk" ? "Bulk" : "Services"}
+        </button>
+        {filterOpen && (
+          <div className="filter-menu" role="menu">
+            {([
+              ["all", "All"],
+              ["sale", "For sale"],
+              ["giveaway", "Free"],
+              ["bulk", "Bulk"],
+              ["service", "Services"],
+            ] as const).map(([id, label]) => (
+              <button key={id} className={lane === id ? "on" : ""} type="button" onClick={() => { setLane(id); setFilterOpen(false); }}>{label}</button>
+            ))}
+          </div>
+        )}
       </div>
 
       <section

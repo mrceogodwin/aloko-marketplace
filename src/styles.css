@@ -1478,22 +1478,131 @@
   to { transform: translateX(-50%); }
 }
 
-.kind-tabs {
+.live-tape {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  margin: 0 0 2px;
+  padding: 0 10px 0 4px;
+  border: 1px solid #c6f13566;
+  border-radius: 999px;
+  background: transparent;
+  overflow: hidden;
+}
+
+.live-mark {
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #f4ffb0 0%, #c6f135 48%, #9ed10a 100%);
+  color: #123018;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 22px;
+  box-shadow: inset 0 1px 0 #ffffff, 0 2px 0 #6a9208;
+}
+
+.live-track {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.live-run {
+  display: flex;
+  width: max-content;
+  animation: tick 26s linear infinite;
+}
+
+.live-run span {
+  display: inline-flex;
+  gap: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #e7f6c4;
+  white-space: nowrap;
+}
+
+.live-run i {
+  font-style: normal;
+}
+
+.live-run em {
+  font-style: normal;
+  color: #c6f135;
+  font-weight: 800;
+}
+
+.live-run b {
+  color: #c6f13588;
+  font-weight: 700;
+}
+
+.lane-bar {
   position: sticky;
   top: 0;
-  z-index: 4;
+  z-index: 5;
   display: flex;
-  gap: 16px;
-  overflow-x: auto;
+  justify-content: flex-end;
+  padding: 6px 12px 2px;
   background: #f4f6ee;
-  padding: 8px 14px 0;
-  scrollbar-width: none;
   transition: transform 0.22s ease;
 }
 
-.kind-tabs.hide {
-  transform: translateY(-120%);
+.lane-bar.hide {
+  transform: translateY(-140%);
   pointer-events: none;
+}
+
+.filter-btn {
+  height: 28px;
+  width: auto;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffffff 0%, #e4eee0 100%);
+  color: #123018;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: inset 0 1px 0 #ffffff, 0 2px 0 #b7c3b2, 0 3px 6px #01211522;
+}
+
+.filter-btn:active {
+  transform: translateY(2px);
+}
+
+.filter-menu {
+  position: absolute;
+  right: 12px;
+  top: 38px;
+  z-index: 6;
+  display: grid;
+  min-width: 148px;
+  overflow: hidden;
+  border: 1px solid #e4e8df;
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 10px 24px #01211524;
+}
+
+.filter-menu button {
+  width: 100%;
+  border: 0;
+  background: white;
+  color: #123018;
+  text-align: left;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 10px 12px;
+}
+
+.filter-menu button.on {
+  color: #075133;
+  background: #f3fbe0;
 }
 
 .kind-tabs button {

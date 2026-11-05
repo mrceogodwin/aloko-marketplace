@@ -105,6 +105,7 @@ export type PersonRow = {
 };
 export type AuditRow = { id: string; action: string; target: string };
 export type OrderRow = { id: string; kind: string; amount: number; status: string; listingId: string; email?: string };
+export type TapeRow = { id: string; body: string; status: string; kind: string; seller?: string };
 export type DashboardData = {
   profile: AlokoProfile;
   listings: AlokoRow[];
@@ -120,6 +121,9 @@ export type DashboardData = {
   orders: OrderRow[];
   deals: { id: string; title: string; soldPrice: number | null; city: string; soldAt: string | null }[];
   waitingOrders: OrderRow[];
+  tape: TapeRow[];
+  tapeQueue: TapeRow[];
+  tapeFree: number;
 };
 
 type Sql = Awaited<ReturnType<typeof getSql>>;
@@ -288,6 +292,7 @@ const PRICES = {
   service_month: 6000,
   ad_category: 15000,
   ad_home: 30000,
+  tape_line: 5000,
 } as const;
 
 async function paidExtras(sql: Sql, userId: string) {
@@ -373,6 +378,9 @@ export const getDashboard = createServerFn({ method: "GET" })
       order by sold_at desc limit 20
     `;
     let waitingOrders: OrderRow[] = [];
+    let tape: TapeRow[] = [];
+    let tapeQueue: TapeRow[] = [];
+    let tapeFree = 0;
     let queue: AlokoRow[] = [];
     let serviceQueue: ServiceRow[] = [];
     let people: PersonRow[] = [];
@@ -426,7 +434,27 @@ export const getDashboard = createServerFn({ method: "GET" })
         limit 30
       `;
     }
-    return { profile, listings, services, threads, queue, serviceQueue, people, audit: trail, saves, recent, creditsLeft, orders, deals, waitingOrders };
+    if (profile.roles.includes("business") || profile.roles.includes("service")) {
+      tape = await sql<TapeRow>`select id, body, status, kind from aloko_tape where user_id = ${context.userId} order by created_at desc limit 12`;
+      const freeRows = await sql<{ n: number }>`
+        select count(*)::int as n from aloko_tape
+        where user_id = ${context.userId} and kind = 'free' and status <> 'rejected'
+          and week_key = to_char(now() at time zone 'Africa/Lagos', 'IYYY-"W"IW')
+      `;
+      tapeFree = Math.max(0, 3 - (freeRows[0]?.n ?? 0));
+    }
+    if (isStaff(profile.roles)) {
+      tapeQueue = await sql<TapeRow>`
+        select t.id, t.body, t.status, t.kind, coalesce(nullif(p.business_name, ''), u.email) as seller
+        from aloko_tape t
+        join "user" u on u.id = t.user_id
+        left join aloko_profiles p on p.user_id = t.user_id
+        where t.status = 'pending'
+        order by t.created_at asc
+        limit 30
+      `;
+    }
+    return { profile, listings, services, threads, queue, serviceQueue, people, audit: trail, saves, recent, creditsLeft, orders, deals, waitingOrders, tape, tapeQueue, tapeFree };
   });
 
 export const saveMyProfile = createServerFn({ method: "POST" })
@@ -962,6 +990,71 @@ export const finishOnboarding = createServerFn({ method: "POST" })
     return { role: data.role };
   });
 
+export const listTape = createServerFn({ method: "GET" }).handler(async () => {
+  const sql = await getSql();
+  return sql<{ id: string; body: string; seller: string }>`
+    select t.id, t.body, coalesce(nullif(p.business_name, ''), 'A business') as seller
+    from aloko_tape t
+    left join aloko_profiles p on p.user_id = t.user_id
+    where t.status = 'active' and t.created_at > now() - interval '7 days'
+    order by t.created_at desc
+    limit 20
+  `;
+});
+
+export const postTape = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((body: string) => {
+    const line = text(body, 80).replace(/\s+/g, " ");
+    if (line.length < 8) throw new Error("Write at least 8 characters.");
+    return line;
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    await assertLive(sql, context.userId);
+    const roles = await rolesOf(sql, context.userId);
+    if (!roles.includes("business") && !roles.includes("service")) throw new Error("Only a business or a decluttering service can post on the tape.");
+    const week = await sql<{ week: string }>`select to_char(now() at time zone 'Africa/Lagos', 'IYYY-"W"IW') as week`;
+    const weekKey = week[0]?.week ?? "";
+    const used = await sql<{ n: number }>`
+      select count(*)::int as n from aloko_tape
+      where user_id = ${context.userId} and kind = 'free' and status <> 'rejected' and week_key = ${weekKey}
+    `;
+    const id = crypto.randomUUID();
+    const free = (used[0]?.n ?? 0) < 3;
+    await sql`
+      insert into aloko_tape (id, user_id, body, kind, status, week_key)
+      values (${id}, ${context.userId}, ${data}, ${free ? "free" : "paid"}, ${free ? "pending" : "hold"}, ${weekKey})
+    `;
+    if (!free) {
+      await sql`
+        insert into aloko_orders (id, user_id, kind, amount, listing_id)
+        values (${crypto.randomUUID()}, ${context.userId}, 'tape_line', ${PRICES.tape_line}, ${id})
+      `;
+    }
+    return { id, free };
+  });
+
+export const decideTape = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { id: string; status: "active" | "rejected" }) => ({
+    id: text(input?.id, 80),
+    status: input?.status === "rejected" ? "rejected" as const : "active" as const,
+  }))
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const roles = await rolesOf(sql, context.userId);
+    if (!isStaff(roles)) throw new Error("Only Aloko staff can decide a tape line.");
+    const rows = await sql<{ id: string }>`
+      update aloko_tape set status = ${data.status}
+      where id = ${data.id} and status = 'pending'
+      returning id
+    `;
+    if (!rows[0]) throw new Error("That line is not waiting.");
+    await audit(sql, context.userId, `tape-${data.status}`, data.id);
+    return { ok: true };
+  });
+
 export const saveRadius = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((km: number) => {
@@ -1026,6 +1119,9 @@ export const confirmOrder = createServerFn({ method: "POST" })
         set plan_until = case when plan_until > now() then plan_until + interval '30 days' else now() + interval '30 days' end
         where user_id = ${order.user_id}
       `;
+    }
+    if (order.kind === "tape_line" && order.listing_id) {
+      await sql`update aloko_tape set status = 'pending' where id = ${order.listing_id} and status = 'hold'`;
     }
     await audit(sql, context.userId, "confirm-payment", order.id);
     return { ok: true };

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GROK_PROVIDERS, authClient, signIn } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { activateRole, createListing, decideListing, getDashboard, listLiveListings, openThread, placeOrder, recordView, saveRadius, toggleSave, type AlokoRole, type AlokoRow, type DashboardData } from "@/lib/aloko.functions";
+import { activateRole, createListing, decideListing, getDashboard, listLiveListings, listTape, openThread, placeOrder, recordView, saveRadius, toggleSave, type AlokoRole, type AlokoRow, type DashboardData } from "@/lib/aloko.functions";
 import { ChatDesk } from "@/components/aloko/ChatDesk";
 import { Onboarding } from "@/components/aloko/Onboarding";
 import { Workspace } from "@/components/aloko/Workspace";
@@ -580,6 +580,7 @@ export function AlokoApp() {
   const [selected, setSelected] = useState<Listing | null>(null);
   const [mine, setMine] = useState<Listing[]>([]);
   const [live, setLive] = useState<Listing[]>([]);
+  const [tapeAds, setTapeAds] = useState<{ id: string; body: string; seller: string }[]>([]);
   const [name, setName] = useState("Guest");
   const [accountType, setAccountType] = useState<AccountType>("buyer");
   const [serviceArea, setServiceArea] = useState("Lagos");
@@ -646,6 +647,13 @@ export function AlokoApp() {
       .catch(() => {
         if (!cancel) setLive([]);
       });
+    listTape()
+      .then((rows) => {
+        if (!cancel) setTapeAds(rows);
+      })
+      .catch(() => {
+        if (!cancel) setTapeAds([]);
+      });
     return () => {
       cancel = true;
     };
@@ -654,6 +662,9 @@ export function AlokoApp() {
   const reloadListings = () => {
     listLiveListings()
       .then((rows) => setLive(rows.map(fromRow)))
+      .catch(() => {});
+    listTape()
+      .then((rows) => setTapeAds(rows))
       .catch(() => {});
     if (!user) {
       setDash(null);
@@ -865,17 +876,35 @@ export function AlokoApp() {
               </button>
             </div>
           </div>
-          {visible.some((item) => item.featured) && (
-            <div className="ticker" aria-label="Paid this week">
-              <div className="ticker-track">
-                {[0, 1].map((copy) => (
-                  <span key={copy}>
-                    {visible.filter((item) => item.featured).map((item) => `${item.seller} · ${item.title}`).join("     ·     ")}
-                  </span>
-                ))}
+          {(() => {
+            const cuts = visible
+              .filter((item) => cutOf(item.price, item.was) > 0)
+              .map((item) => ({ id: item.id, text: `${item.seller} cut ${item.title}`, mark: `−${cutOf(item.price, item.was)}%` }));
+            const ads = tapeAds.map((item) => ({ id: item.id, text: `${item.seller}: ${item.body}`, mark: "AD" }));
+            const bits = [...cuts, ...ads];
+            if (bits.length === 0) return null;
+            const line = bits.map((bit) => `${bit.text}  ${bit.mark}`).join("      ·      ");
+            return (
+              <div className="live-tape" aria-label="Now on Aloko">
+                <span className="live-mark">NOW</span>
+                <div className="live-track">
+                  <div className="live-run">
+                    {[0, 1].map((copy) => (
+                      <span key={copy}>
+                        {bits.map((bit) => (
+                          <i key={`${copy}-${bit.id}`}>
+                            {bit.text} <em>{bit.mark}</em>
+                            <b> · </b>
+                          </i>
+                        ))}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <span className="sr">{line}</span>
               </div>
-            </div>
-          )}
+            );
+          })()}
           <div className="search-row">
             <label className="loc-pill">
               <span className="pin-ico">
