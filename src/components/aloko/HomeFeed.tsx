@@ -9,6 +9,7 @@ export type HomeItem = {
   kind: "sale" | "giveaway" | "bulk";
   image: string;
   verified: boolean;
+  condition?: string;
   seller: string;
   area?: string;
   featured?: boolean;
@@ -103,6 +104,7 @@ export function HomeFeed({
   const [lane, setLane] = useState<Lane>("all");
   const [tabsOn, setTabsOn] = useState(true);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [showTop, setShowTop] = useState(false);
   const [about, setAbout] = useState(false);
   const [options, setOptions] = useState(false);
   const [mail, setMail] = useState("");
@@ -113,6 +115,8 @@ export function HomeFeed({
   const [slide, setSlide] = useState(0);
   const [paused, setPaused] = useState(false);
   const startX = useRef(0);
+  const startY = useRef(0);
+  const dragging = useRef(false);
   const reduced = useRef(false);
   const lastY = useRef(0);
 
@@ -121,6 +125,7 @@ export function HomeFeed({
     if (!main) return;
     const onScroll = () => {
       const y = main.scrollTop;
+      setShowTop(y > 360);
       if (y < 28) setTabsOn(true);
       else if (y > lastY.current + 10) setTabsOn(false);
       else if (y < lastY.current - 10) setTabsOn(true);
@@ -224,16 +229,25 @@ export function HomeFeed({
         className="hero"
         aria-label="Aloko"
         onPointerDown={(event) => {
+          if ((event.target as HTMLElement).closest("button")) return;
           startX.current = event.clientX;
+          startY.current = event.clientY;
+          dragging.current = true;
           setPaused(true);
         }}
         onPointerUp={(event) => {
-          const delta = event.clientX - startX.current;
-          if (delta > 40) go(slide - 1);
-          if (delta < -40) {
+          if (!dragging.current) return;
+          dragging.current = false;
+          const dx = event.clientX - startX.current;
+          const dy = event.clientY - startY.current;
+          if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy)) {
             setStoryDone(true);
-            go(slide + 1);
+            go(slide + (dx < 0 ? 1 : -1));
           }
+          setPaused(false);
+        }}
+        onPointerCancel={() => {
+          dragging.current = false;
           setPaused(false);
         }}
       >
@@ -273,6 +287,8 @@ export function HomeFeed({
           ))}
         </div>
         <span className="hero-count">{slide + 1} / {total}</span>
+        <button className="hero-nav prev" type="button" aria-label="Previous slide" onClick={() => { setStoryDone(true); go(slide - 1); }}>‹</button>
+        <button className="hero-nav next" type="button" aria-label="Next slide" onClick={() => { setStoryDone(true); go(slide + 1); }}>›</button>
       </section>
 
       {lane === "service" ? (
@@ -416,7 +432,7 @@ export function HomeFeed({
         )}
         <small className="copy">Copyright © 2026 Aloko. Sell it. Give it. Pass it on.</small>
       </footer>
-      <button className="to-top" type="button" onClick={() => document.querySelector(".aloko-main")?.scrollTo({ top: 0, behavior: "smooth" })}>↑</button>
+      <button className={showTop ? "to-top show" : "to-top"} type="button" aria-label="Back to top" onClick={() => document.querySelector(".aloko-main")?.scrollTo({ top: 0, behavior: "smooth" })}>↑</button>
     </div>
   );
 }
@@ -466,13 +482,16 @@ function Card({ item, saved, onOpen, onSave, extra }: { item: HomeItem; saved: b
             {cutOf(item.price, item.was) > 0 && item.was ? <s>{money(item.was)}</s> : null}
             {cutOf(item.price, item.was) > 0 ? <em>-{cutOf(item.price, item.was)}%</em> : null}
           </span>
-          <span className="place">{place(item)}{extra ? ` · ${extra}` : ""}</span>
+          {item.condition ? <span className="cond">{item.condition}</span> : null}
+          <span className="place">
+            {place(item)}{extra ? ` · ${extra}` : ""}
+            {item.verified ? <i className="tick" title="Aloko verified this business">✓</i> : null}
+          </span>
         </div>
       </button>
       <button className={saved ? "heart on" : "heart"} type="button" aria-label={saved ? "Unsave" : "Save"} onClick={() => onSave(item.id)}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-9a4 4 0 0 1 7-2 4 4 0 0 1 7 2c0 4.6-7 9-7 9Z" fill="none" stroke="currentColor" strokeWidth="1.8" /></svg>
       </button>
-      {item.verified && <span className="verified" title="Aloko verified this business">✓</span>}
     </article>
   );
 }

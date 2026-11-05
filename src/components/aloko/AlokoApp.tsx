@@ -1077,6 +1077,7 @@ export function AlokoApp() {
                       <div className="listing-copy">
                         <strong>{item.title}</strong>
                         <PriceLine price={item.price} was={item.was} />
+                        <span className="cond">{item.condition}</span>
                         <span className="place">
                           <Icon name="pin" />
                           {place}{km != null ? ` · ~${km} km` : ""}
@@ -1230,6 +1231,7 @@ export function AlokoApp() {
 
         </main>
 
+        <div className="dock">
         <nav className="nav-tabs" aria-label="App">
           {(
             [
@@ -1247,6 +1249,7 @@ export function AlokoApp() {
             </button>
           ))}
         </nav>
+        </div>
 
         {selected && (
           <div className="detail" role="dialog" aria-modal="true" aria-label={selected.title}>
