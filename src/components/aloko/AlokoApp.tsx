@@ -742,6 +742,14 @@ export function AlokoApp() {
       .slice(0, 8);
   }, [listings, originLat, originLng, radiusKm]);
 
+  const tapeBits = useMemo(() => {
+    const cuts = visible
+      .filter((item) => cutOf(item.price, item.was) > 0)
+      .map((item) => ({ id: item.id, text: `${item.seller} cut ${item.title}`, mark: `−${cutOf(item.price, item.was)}%` }));
+    const ads = tapeAds.map((item) => ({ id: item.id, text: `${item.seller}: ${item.body}`, mark: "AD" }));
+    return [...cuts, ...ads];
+  }, [visible, tapeAds]);
+
   const toggleSaved = (id: string) => {
     if (!user) {
       setTab("account");
@@ -876,35 +884,6 @@ export function AlokoApp() {
               </button>
             </div>
           </div>
-          {(() => {
-            const cuts = visible
-              .filter((item) => cutOf(item.price, item.was) > 0)
-              .map((item) => ({ id: item.id, text: `${item.seller} cut ${item.title}`, mark: `−${cutOf(item.price, item.was)}%` }));
-            const ads = tapeAds.map((item) => ({ id: item.id, text: `${item.seller}: ${item.body}`, mark: "AD" }));
-            const bits = [...cuts, ...ads];
-            if (bits.length === 0) return null;
-            const line = bits.map((bit) => `${bit.text}  ${bit.mark}`).join("      ·      ");
-            return (
-              <div className="live-tape" aria-label="Now on Aloko">
-                <span className="live-mark">NOW</span>
-                <div className="live-track">
-                  <div className="live-run">
-                    {[0, 1].map((copy) => (
-                      <span key={copy}>
-                        {bits.map((bit) => (
-                          <i key={`${copy}-${bit.id}`}>
-                            {bit.text} <em>{bit.mark}</em>
-                            <b> · </b>
-                          </i>
-                        ))}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <span className="sr">{line}</span>
-              </div>
-            );
-          })()}
           <div className="search-row">
             <label className="loc-pill">
               <span className="pin-ico">
@@ -1014,6 +993,7 @@ export function AlokoApp() {
               onInstall={() => void installApp()}
               onPricing={() => { setPricing(true); setDesk(false); }}
               onAccount={() => setTab("account")}
+              tape={tapeBits}
             />
           )}
 

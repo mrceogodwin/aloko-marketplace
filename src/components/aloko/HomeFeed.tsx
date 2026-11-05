@@ -84,6 +84,7 @@ export function HomeFeed({
   onInstall,
   onPricing,
   onAccount,
+  tape,
 }: {
   items: HomeItem[];
   saved: string[];
@@ -97,6 +98,7 @@ export function HomeFeed({
   onInstall: () => void;
   onPricing: () => void;
   onAccount: () => void;
+  tape: { id: string; text: string; mark: string }[];
 }) {
   const [lane, setLane] = useState<Lane>("all");
   const [tabsOn, setTabsOn] = useState(true);
@@ -179,8 +181,29 @@ export function HomeFeed({
   return (
     <div className="home-fit">
       <div className={tabsOn ? "lane-bar" : "lane-bar hide"}>
-        <button className="filter-btn" type="button" aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)}>
-          Filter · {lane === "all" ? "All" : lane === "sale" ? "For sale" : lane === "giveaway" ? "Free" : lane === "bulk" ? "Bulk" : "Services"}
+        {tape.length > 0 && (
+          <div className="live-tape" aria-label="Now on Aloko">
+            <span className="live-mark">NOW</span>
+            <div className="live-track">
+              <div className="live-run">
+                {[0, 1].map((copy) => (
+                  <span key={copy}>
+                    {tape.map((bit) => (
+                      <i key={`${copy}-${bit.id}`}>
+                        {bit.text} <em>{bit.mark}</em>
+                        <b> · </b>
+                      </i>
+                    ))}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+        <button className={lane === "all" ? "filter-btn" : "filter-btn on"} type="button" aria-label="Filter" aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
         </button>
         {filterOpen && (
           <div className="filter-menu" role="menu">
