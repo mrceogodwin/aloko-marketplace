@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
+import { env } from "@/lib/env.server";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { placeFor } from "@/lib/places";
 
@@ -558,7 +559,7 @@ export const createListing = createServerFn({ method: "POST" })
     const countRows = await sql<{ n: number }>`select count(*)::int as n from aloko_listings where user_id = ${context.userId} and status <> 'rejected'`;
     const used = countRows[0]?.n ?? 0;
     const allowanceLeft = await allowance(sql, context.userId, roles, used);
-    if (allowanceLeft <= 0) throw new Error(roles.includes("business") ? "The catalogue is full. A paid business month opens 100 spaces." : "The free listings are used. Buy one more listing for ₦1,000. It starts after Aloko confirms the payment.");
+    if (allowanceLeft <= 0) throw new Error(roles.includes("business") ? "The catalogue is full. A paid business month opens 100 spaces." : "The free listings are used. Buy one more listing for ₦1,000. It starts after Paystack confirms the payment.");
     const stock = roles.includes("business") ? data.stock : 1;
     const seq = await sql<{ n: number }>`update aloko_codes set n = n + 1 where id = 1 returning n`;
     const code = `ALOKO-${PREFIX[data.category] ?? "ITM"}-${String(seq[0]?.n ?? used + 1).padStart(6, "0")}`;
@@ -1043,12 +1044,14 @@ export const postTape = createServerFn({ method: "POST" })
       values (${id}, ${context.userId}, ${data}, ${free ? "free" : "paid"}, ${free ? "pending" : "hold"}, ${weekKey})
     `;
     if (!free) {
+      const orderId = crypto.randomUUID();
       await sql`
         insert into aloko_orders (id, user_id, kind, amount, listing_id)
-        values (${crypto.randomUUID()}, ${context.userId}, 'tape_line', ${PRICES.tape_line}, ${id})
+        values (${orderId}, ${context.userId}, 'tape_line', ${PRICES.tape_line}, ${id})
       `;
+      return { id, free, orderId };
     }
-    return { id, free };
+    return { id, free, orderId: "" };
   });
 
 export const decideTape = createServerFn({ method: "POST" })
@@ -1247,10 +1250,14 @@ export const listAdQueue = createServerFn({ method: "GET" })
     const sql = await getSql();
     const roles = await rolesOf(sql, context.userId);
     if (!roles.includes("super_admin")) throw new Error("Only a super admin can manage placements.");
-    return sql<{ id: string; slot: string; image: string; status: string; orderId: string | null; amount: number | null }>`
-      select a.id, a.slot, a.image, a.status, o.id as "orderId", o.amount
+    return sql<{ id: string; slot: string; image: string; status: string; orderId: string | null; amount: number | null; payStatus: string | null }>`
+      select a.id, a.slot, a.image, a.status, o.id as "orderId", o.amount, o.status as "payStatus"
       from aloko_ads a
-      left join aloko_orders o on o.listing_id = a.id and o.status = 'unpaid'
+      left join lateral (
+        select id, amount, status from aloko_orders
+        where listing_id = a.id and kind in ('ad_ribbon', 'ad_portrait')
+        order by created_at desc limit 1
+      ) o on true
       where a.status = 'pending'
       order by a.created_at desc
       limit 20
@@ -1278,11 +1285,12 @@ export const submitAd = createServerFn({ method: "POST" })
     await sql`insert into aloko_ads (id, user_id, slot, image) values (${id}, ${context.userId}, ${data.slot}, ${data.image})`;
     const kind = data.slot === "portrait" ? "ad_portrait" : "ad_ribbon";
     const amount = PRICES[kind];
+    const orderId = crypto.randomUUID();
     await sql`
       insert into aloko_orders (id, user_id, kind, amount, listing_id)
-      values (${crypto.randomUUID()}, ${context.userId}, ${kind}, ${amount}, ${id})
+      values (${orderId}, ${context.userId}, ${kind}, ${amount}, ${id})
     `;
-    return { id, amount };
+    return { id, amount, orderId };
   });
 
 export const rejectAd = createServerFn({ method: "POST" })
@@ -1375,6 +1383,134 @@ export const saveRadius = createServerFn({ method: "POST" })
     return { radiusKm: data };
   });
 
+export async function settlePaystackReference(reference: string) {
+  const safe = text(reference, 80);
+  if (!safe.startsWith("alk_")) return { ok: false as const };
+  const { verifyPaystack } = await import("@/lib/paystack.server");
+  const check = await verifyPaystack(safe);
+  if (!check.ok) return { ok: false as const };
+  const sql = await getSql();
+  const orders = await sql<{ id: string; user_id: string; kind: string; listing_id: string; amount: number; status: string }>`
+    select id, user_id, kind, listing_id, amount, status from aloko_orders where reference = ${safe}
+  `;
+  const order = orders[0];
+  if (!order || check.amount !== order.amount * 100) return { ok: false as const };
+  if (order.status === "paid") return { ok: true as const };
+  if (order.status !== "unpaid") return { ok: false as const };
+  const updated = await sql<{ id: string }>`
+    update aloko_orders set status = 'paid' where id = ${order.id} and status = 'unpaid' returning id
+  `;
+  if (!updated[0]) return { ok: true as const };
+  if (order.kind === "feature_listing" && order.listing_id) {
+    await sql`update aloko_listings set featured_until = now() + interval '7 days' where id = ${order.listing_id}`;
+  }
+  if (order.kind === "business_month" || order.kind === "service_month") {
+    await sql`
+      update aloko_profiles
+      set plan_until = case when plan_until > now() then plan_until + interval '30 days' else now() + interval '30 days' end
+      where user_id = ${order.user_id}
+    `;
+  }
+  if (order.kind === "tape_line" && order.listing_id) {
+    await sql`update aloko_tape set status = 'pending' where id = ${order.listing_id} and status = 'hold'`;
+  }
+  await audit(sql, order.user_id, "paystack-paid", order.id);
+  return { ok: true as const };
+}
+
+async function checkoutOrigin() {
+  const configured = env("APP_URL") || env("VERCEL_PROJECT_PRODUCTION_URL") || env("VERCEL_URL");
+  if (configured) return configured.startsWith("http") ? configured.replace(/\/$/, "") : `https://${configured.replace(/\/$/, "")}`;
+  const { getRequest } = await import("@tanstack/react-start/server");
+  const request = getRequest();
+  const host = request?.headers.get("x-forwarded-host") || request?.headers.get("host");
+  if (!host) throw new Error("Paystack needs a return address.");
+  const proto = request?.headers.get("x-forwarded-proto") || "https";
+  return `${proto}://${host}`;
+}
+
+export const startCheckout = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { kind?: string; listingId?: string; orderId?: string }) => ({
+    kind: text(input?.kind, 40),
+    listingId: text(input?.listingId, 80),
+    orderId: text(input?.orderId, 80),
+  }))
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    await assertLive(sql, context.userId);
+    const email = await emailOf(sql, context.userId);
+    if (!email.includes("@") || email.endsWith("@viewer.grok.invalid")) throw new Error("Add a real email to this account before paying.");
+    let order: { id: string; kind: string; amount: number; listing_id: string };
+    if (data.orderId) {
+      const rows = await sql<{ id: string; kind: string; amount: number; listing_id: string; status: string }>`
+        select id, kind, amount, listing_id, status from aloko_orders where id = ${data.orderId} and user_id = ${context.userId}
+      `;
+      const found = rows[0];
+      if (!found || found.status !== "unpaid") throw new Error("That payment is not waiting.");
+      order = found;
+    } else {
+      if (!(data.kind in PRICES)) throw new Error("That plan is not on the price list.");
+      const kind = data.kind as keyof typeof PRICES;
+      const roles = await rolesOf(sql, context.userId);
+      if (kind === "extra_listing" && !roles.includes("individual") && !roles.includes("business")) throw new Error("That plan is for a seller.");
+      if (kind === "business_month" && !roles.includes("business")) throw new Error("Switch to a business account first.");
+      if (kind === "service_month" && !roles.includes("service")) throw new Error("Switch to a decluttering service account first.");
+      if (kind === "feature_listing") {
+        const mine = await sql<{ id: string }>`select id from aloko_listings where id = ${data.listingId} and user_id = ${context.userId}`;
+        if (!mine[0]) throw new Error("Feature a listing that is yours.");
+      }
+      if (kind === "tape_line" || kind === "ad_ribbon" || kind === "ad_portrait") throw new Error("Open that payment from the tape or the banner.");
+      const open = await sql<{ id: string; kind: string; amount: number; listing_id: string }>`
+        select id, kind, amount, listing_id from aloko_orders
+        where user_id = ${context.userId} and kind = ${kind} and listing_id = ${data.listingId} and status = 'unpaid'
+        limit 1
+      `;
+      if (open[0]) {
+        order = open[0];
+      } else {
+        const id = crypto.randomUUID();
+        await sql`
+          insert into aloko_orders (id, user_id, kind, amount, listing_id)
+          values (${id}, ${context.userId}, ${kind}, ${PRICES[kind]}, ${data.listingId})
+        `;
+        order = { id, kind, amount: PRICES[kind], listing_id: data.listingId };
+      }
+    }
+    const reference = `alk_${order.id.replace(/-/g, "").slice(0, 20)}_${Date.now().toString(36)}`;
+    await sql`update aloko_orders set reference = ${reference} where id = ${order.id} and status = 'unpaid'`;
+    const { initializePaystack } = await import("@/lib/paystack.server");
+    const origin = await checkoutOrigin();
+    const authorizationUrl = await initializePaystack({
+      email,
+      amountNaira: order.amount,
+      reference,
+      callbackUrl: `${origin}/api/paystack/callback`,
+    });
+    return { authorizationUrl, amount: order.amount };
+  });
+
+export const publishAd = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((id: string) => text(id, 80))
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const roles = await rolesOf(sql, context.userId);
+    if (!roles.includes("super_admin")) throw new Error("Only a super admin can place a banner.");
+    const paid = await sql<{ id: string }>`
+      select id from aloko_orders
+      where listing_id = ${data} and status = 'paid' and kind in ('ad_ribbon', 'ad_portrait')
+      limit 1
+    `;
+    if (!paid[0]) throw new Error("Paystack has not confirmed this banner.");
+    const rows = await sql<{ id: string }>`
+      update aloko_ads set status = 'active' where id = ${data} and status = 'pending' returning id
+    `;
+    if (!rows[0]) throw new Error("That banner is not waiting.");
+    await audit(sql, context.userId, "place-ad", data);
+    return { ok: true };
+  });
+
 export const placeOrder = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: { kind: string; listingId?: string }) => {
@@ -1401,38 +1537,5 @@ export const placeOrder = createServerFn({ method: "POST" })
       values (${id}, ${context.userId}, ${data.kind}, ${PRICES[data.kind]}, ${data.listingId})
     `;
     return { id, amount: PRICES[data.kind] };
-  });
-
-export const confirmOrder = createServerFn({ method: "POST" })
-  .middleware([authMiddleware])
-  .validator((orderId: string) => text(orderId, 80))
-  .handler(async ({ context, data }) => {
-    const sql = await getSql();
-    const roles = await rolesOf(sql, context.userId);
-    if (!roles.includes("super_admin")) throw new Error("Only a super admin can confirm a payment.");
-    const orders = await sql<{ id: string; user_id: string; kind: string; listing_id: string; status: string }>`
-      select id, user_id, kind, listing_id, status from aloko_orders where id = ${data}
-    `;
-    const order = orders[0];
-    if (!order || order.status !== "unpaid") throw new Error("That payment is not waiting.");
-    await sql`update aloko_orders set status = 'paid' where id = ${order.id}`;
-    if (order.kind === "feature_listing" && order.listing_id) {
-      await sql`update aloko_listings set featured_until = now() + interval '7 days' where id = ${order.listing_id}`;
-    }
-    if (order.kind === "business_month" || order.kind === "service_month") {
-      await sql`
-        update aloko_profiles
-        set plan_until = case when plan_until > now() then plan_until + interval '30 days' else now() + interval '30 days' end
-        where user_id = ${order.user_id}
-      `;
-    }
-    if (order.kind === "tape_line" && order.listing_id) {
-      await sql`update aloko_tape set status = 'pending' where id = ${order.listing_id} and status = 'hold'`;
-    }
-    if ((order.kind === "ad_ribbon" || order.kind === "ad_portrait") && order.listing_id) {
-      await sql`update aloko_ads set status = 'active' where id = ${order.listing_id} and status = 'pending'`;
-    }
-    await audit(sql, context.userId, "confirm-payment", order.id);
-    return { ok: true };
   });
 

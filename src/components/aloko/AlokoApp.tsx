@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GROK_PROVIDERS, authClient, signIn } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { activateRole, addTicketNote, createListing, decideListing, getDashboard, listFollows, listHome, listLiveAds, listLiveListings, listLiveServices, listNotes, listTape, markNotesRead, openTicket, openThread, placeOrder, readTicket, recordView, saveRadius, setHomeSection, submitAd, toggleFollow, toggleSave, touchSeen, type AlokoRole, type AlokoRow, type DashboardData, type HomeSection, type TicketView } from "@/lib/aloko.functions";
+import { activateRole, addTicketNote, createListing, decideListing, getDashboard, listFollows, listHome, listLiveAds, listLiveListings, listLiveServices, listNotes, listTape, markNotesRead, openTicket, openThread, readTicket, recordView, saveRadius, setHomeSection, startCheckout, submitAd, toggleFollow, toggleSave, touchSeen, type AlokoRole, type AlokoRow, type DashboardData, type HomeSection, type TicketView } from "@/lib/aloko.functions";
 import { ChatDesk } from "@/components/aloko/ChatDesk";
 import { Onboarding } from "@/components/aloko/Onboarding";
 import { Workspace } from "@/components/aloko/Workspace";
@@ -540,7 +540,7 @@ function PricingPage({ onPlan }: { onPlan: (kind: string) => void }) {
         <strong>₦0</strong>
         <p>Buyers do not pay Aloko. Browse, save, message and collect giveaways for free. If you buy an item, you pay the seller directly. Aloko does not take that money.</p>
       </article>
-      <p className="type-lead">Only sellers, businesses, decluttering services and advertisers pay Aloko. A card is not charged here. Aloko confirms the payment, then the plan starts.</p>
+      <p className="type-lead">Only sellers, businesses, decluttering services and advertisers pay Aloko. You pay on Paystack. The plan starts only after Paystack confirms the money. Buyers are never charged.</p>
       <article className="price-plan">
         <header>
           <span>Individual seller</span>
@@ -641,6 +641,13 @@ export function AlokoApp() {
   const [asMap, setAsMap] = useState(false);
   const [ready, setReady] = useState(false);
   const installEvent = useRef<Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> } | null>(null);
+
+  useEffect(() => {
+    const pay = new URLSearchParams(window.location.search).get("pay");
+    if (pay !== "paid" && pay !== "failed") return;
+    setToast(pay === "paid" ? "Paystack confirmed the payment." : "Paystack did not confirm that payment.");
+    window.history.replaceState({}, "", window.location.pathname);
+  }, []);
 
   useEffect(() => {
     const onPrompt = (event: Event) => {
@@ -1018,9 +1025,9 @@ export function AlokoApp() {
                 setToast("Sign in first. Buyers are not charged.");
                 return;
               }
-              void placeOrder({ data: { kind } })
-                .then(() => setToast("Saved. No card was charged. Aloko confirms it before the plan starts."))
-                .catch((err: unknown) => setToast(err instanceof Error ? err.message : "Could not save that plan."));
+              void startCheckout({ data: { kind } })
+                .then((result) => { window.location.assign(result.authorizationUrl); })
+                .catch((err: unknown) => setToast(err instanceof Error ? err.message : "Paystack did not open."));
             }} />
           ) : desk ? (
             <div className="sheet">
@@ -1448,10 +1455,6 @@ export function AlokoApp() {
           <AdUpload
             slot={adSlot}
             onClose={() => setAdSlot(null)}
-            onDone={(amount) => {
-              setAdSlot(null);
-              setToast(`Saved. ₦${amount.toLocaleString("en-NG")} is waiting. No card was charged. A super admin places the banner after confirming it.`);
-            }}
             onError={(message) => setToast(message)}
           />
         )}
@@ -1464,12 +1467,10 @@ export function AlokoApp() {
 function AdUpload({
   slot,
   onClose,
-  onDone,
   onError,
 }: {
   slot: "ribbon_picks" | "ribbon_drops" | "ribbon_furniture" | "portrait";
   onClose: () => void;
-  onDone: (amount: number) => void;
   onError: (message: string) => void;
 }) {
   const [image, setImage] = useState("");
@@ -1497,7 +1498,7 @@ function AdUpload({
       <div className="detail-card form">
         <button className="linkish" type="button" onClick={onClose}>← Back</button>
         <h3>{portrait ? "Portrait banner" : "Flat banner"}</h3>
-        <p className="type-lead">{portrait ? "A tall 9:16 placement before the footer. ₦40,000 for the week." : "A flat placement on the home. ₦15,000 for the week."} Any signed-in account can book an open slot. Aloko confirms the payment, then the banner goes up.</p>
+        <p className="type-lead">{portrait ? "A portrait placement. ₦40,000 for the week." : "A flat placement. ₦15,000 for the week."} Paystack takes the payment. A super admin places the artwork only after Paystack confirms it.</p>
         <label>
           Banner photo
           <input type="file" accept="image/*" onChange={(event) => {
@@ -1508,9 +1509,10 @@ function AdUpload({
         {image && <img src={image} alt="" />}
         <button className="primary" type="button" disabled={!image} onClick={() => {
           void submitAd({ data: { slot, image } })
-            .then((result) => onDone(result.amount))
-            .catch((err: unknown) => onError(err instanceof Error ? err.message : "Could not save that banner."));
-        }}>Submit for placement</button>
+            .then((created) => startCheckout({ data: { orderId: created.orderId } }))
+            .then((result) => { window.location.assign(result.authorizationUrl); })
+            .catch((err: unknown) => onError(err instanceof Error ? err.message : "Could not open Paystack."));
+        }}>Pay with Paystack</button>
       </div>
     </div>
   );

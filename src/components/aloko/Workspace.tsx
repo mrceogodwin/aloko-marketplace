@@ -7,8 +7,8 @@ import {
   decideListing,
   decideService,
   grantModerator,
-  placeOrder,
-  confirmOrder,
+  startCheckout,
+  publishAd,
   postTape,
   decideTape,
   reviewBusiness,
@@ -75,7 +75,7 @@ export function Workspace({
   const [service, setService] = useState({ title: "", description: "", areas: "Lagos", priceNote: "Request a quote" });
   const [staffEmail, setStaffEmail] = useState("");
   const [tickets, setTickets] = useState<{ id: string; subject: string; email: string; status: string }[]>([]);
-  const [ads, setAds] = useState<{ id: string; slot: string; image: string; status: string; orderId: string | null; amount: number | null }[]>([]);
+  const [ads, setAds] = useState<{ id: string; slot: string; image: string; status: string; orderId: string | null; amount: number | null; payStatus: string | null }[]>([]);
   const [ticketReply, setTicketReply] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -86,6 +86,11 @@ export function Workspace({
 
   const run = (work: Promise<unknown>) => {
     void work.then(onRefresh).catch((err: unknown) => onError(err instanceof Error ? err.message : "That did not save."));
+  };
+  const pay = (kind: string, listingId = "") => {
+    void startCheckout({ data: { kind, listingId } })
+      .then((result) => { window.location.assign(result.authorizationUrl); })
+      .catch((err: unknown) => onError(err instanceof Error ? err.message : "Paystack did not open."));
   };
 
   return (
@@ -141,8 +146,8 @@ export function Workspace({
             <div className="stat"><b>{data.listings.filter((item) => item.status === "active" && !item.sold).length}</b><span>Live</span></div>
             <div className="stat"><b>{data.creditsLeft}</b><span>Free listings left</span></div>
           </div>
-          <p className="type-lead">Three listings are free. Another one is ₦1,000, and it opens only after Aloko confirms the payment. No card is charged in the app.</p>
-          <button className="ghost" type="button" onClick={() => run(placeOrder({ data: { kind: "extra_listing" } }))}>Buy one listing · ₦1,000</button>
+          <p className="type-lead">Three listings are free. Another one is ₦1,000 on Paystack. The extra listing opens only after Paystack confirms it.</p>
+          <button className="ghost" type="button" onClick={() => pay("extra_listing")}>Buy one listing · ₦1,000</button>
           <button className="primary" type="button" onClick={onSell}>Add listing</button>
           {data.orders.length > 0 && <h3 className="mine-head">Payments</h3>}
           {data.orders.map((item) => <p key={item.id} className="type-lead">{item.kind.replaceAll("_", " ")} · {money(item.amount)} · {item.status}</p>)}
@@ -158,8 +163,8 @@ export function Workspace({
             <label>CAC reference<input value={cacRef} onChange={(event) => setCacRef(event.target.value)} placeholder="RC number" /></label>
             <button className="primary" type="submit">Submit for verification</button>
           </form>
-          <p className="type-lead">{data.creditsLeft} catalogue spaces left. A confirmed business month opens 100. No card is charged in the app.</p>
-          <button className="ghost" type="button" onClick={() => run(placeOrder({ data: { kind: "business_month" } }))}>Business month · ₦12,000</button>
+          <p className="type-lead">{data.creditsLeft} catalogue spaces left. A business month opens 100 after Paystack confirms ₦12,000.</p>
+          <button className="ghost" type="button" onClick={() => pay("business_month")}>Business month · ₦12,000</button>
           <button className="primary" type="button" onClick={onSell}>Add product</button>
           <TapeDesk free={data.tapeFree} lines={data.tape} onRefresh={onRefresh} onError={onError} />
           <ListingList listings={data.listings} onRefresh={onRefresh} onError={onError} />
@@ -168,7 +173,7 @@ export function Workspace({
 
       {role === "service" && (
         <>
-          <button className="ghost" type="button" onClick={() => run(placeOrder({ data: { kind: "service_month" } }))}>Service month · ₦6,000</button>
+          <button className="ghost" type="button" onClick={() => pay("service_month")}>Service month · ₦6,000</button>
           <TapeDesk free={data.tapeFree} lines={data.tape} onRefresh={onRefresh} onError={onError} />
           <form className="form" onSubmit={(event) => { event.preventDefault(); run(createService({ data: service }).then(() => setService({ title: "", description: "", areas: service.areas, priceNote: service.priceNote }))); }}>
             <label>Service<input value={service.title} onChange={(event) => setService({ ...service, title: event.target.value })} placeholder="Home decluttering" /></label>
@@ -266,29 +271,26 @@ export function Workspace({
             </article>
           ))}
           <h3 className="mine-head">Ad placements</h3>
-          <p className="type-lead">A banner stays off the home until you confirm the payment. Decline sends it back.</p>
+          <p className="type-lead">A banner stays off the home until Paystack confirms the money and you place the artwork.</p>
           {ads.length === 0 ? <p className="type-lead">No banner is waiting.</p> : ads.map((item) => (
             <article key={item.id} className="queue-card">
               <img src={item.image} alt="" />
               <div>
                 <strong>{item.slot === "portrait" ? "Portrait" : "Flat banner"}</strong>
-                <span>{item.amount ? money(item.amount) : "No payment waiting"}</span>
+                <span>{item.amount ? money(item.amount) : "No payment"} · {item.payStatus === "paid" ? "Paystack paid" : "Waiting on Paystack"}</span>
                 <div className="queue-actions">
-                  {item.orderId && <button className="primary" type="button" onClick={() => run(confirmOrder({ data: item.orderId! }).then(() => listAdQueue().then(setAds)))}>Place it</button>}
+                  {item.payStatus === "paid" && <button className="primary" type="button" onClick={() => run(publishAd({ data: item.id }).then(() => listAdQueue().then(setAds)))}>Place it</button>}
                   <button className="ghost" type="button" onClick={() => run(rejectAd({ data: item.id }).then(() => listAdQueue().then(setAds)))}>Decline</button>
                 </div>
               </div>
             </article>
           ))}
           <h3 className="mine-head">Payments waiting</h3>
-          {data.waitingOrders.length === 0 ? <p className="type-lead">No payments are waiting.</p> : data.waitingOrders.map((item) => (
+          {data.waitingOrders.length === 0 ? <p className="type-lead">No payments are waiting on Paystack.</p> : data.waitingOrders.map((item) => (
             <article key={item.id} className="queue-card">
               <div>
                 <strong>{item.email}</strong>
-                <span>{item.kind.replaceAll("_", " ")} · {money(item.amount)}</span>
-                <div className="queue-actions">
-                  <button className="primary" type="button" onClick={() => run(confirmOrder({ data: item.id }))}>Confirm payment</button>
-                </div>
+                <span>{item.kind.replaceAll("_", " ")} · {money(item.amount)} · waiting on Paystack</span>
               </div>
             </article>
           ))}
@@ -331,14 +333,19 @@ function TapeDesk({ free, lines, onRefresh, onError }: { free: number; lines: Da
     <form className="form" onSubmit={(event) => {
       event.preventDefault();
       void postTape({ data: body })
-        .then(() => {
+        .then((created) => {
           setBody("");
+          if (!created.free && created.orderId) {
+            return startCheckout({ data: { orderId: created.orderId } }).then((pay) => {
+              window.location.assign(pay.authorizationUrl);
+            });
+          }
           onRefresh();
         })
         .catch((err: unknown) => onError(err instanceof Error ? err.message : "That line did not send."));
     }}>
       <h3 className="mine-head">NOW tape</h3>
-      <p className="type-lead">{free} free lines left this week. After that, a line is ₦5,000. It stays off the tape until Aloko approves the words. A paid line also waits until the payment is confirmed.</p>
+      <p className="type-lead">{free} free lines left this week. After that, a line is ₦5,000 on Paystack. It stays off the tape until Aloko approves the words.</p>
       <label>Line<input value={body} maxLength={80} onChange={(event) => setBody(event.target.value)} placeholder="Clear-outs in Lekki this week" /></label>
       <button className="primary" type="submit">Send this line</button>
       {lines.map((item) => <p key={item.id} className="type-lead">{item.body} · {item.kind} · {item.status}</p>)}
@@ -350,6 +357,11 @@ function ListingList({ listings, onRefresh, onError }: { listings: DashboardData
   const [sale, setSale] = useState<DashboardData["listings"][number] | null>(null);
   const run = (work: Promise<unknown>) => {
     void work.then(onRefresh).catch((err: unknown) => onError(err instanceof Error ? err.message : "That did not save."));
+  };
+  const pay = (kind: string, listingId = "") => {
+    void startCheckout({ data: { kind, listingId } })
+      .then((result) => { window.location.assign(result.authorizationUrl); })
+      .catch((err: unknown) => onError(err instanceof Error ? err.message : "Paystack did not open."));
   };
   if (listings.length === 0) return <p className="type-lead">No listings yet.</p>;
   return (
@@ -371,7 +383,7 @@ function ListingList({ listings, onRefresh, onError }: { listings: DashboardData
               <div className="queue-actions">
                 <button className="ghost" type="button" onClick={() => run(setListingState({ data: { id: item.id, action: item.paused ? "resume" : "pause" } }))}>{item.paused ? "Resume" : "Pause"}</button>
                 <button className="ghost" type="button" onClick={() => run(setListingState({ data: { id: item.id, action: "sold" } }))}>Mark sold</button>
-                <button className="ghost" type="button" onClick={() => run(placeOrder({ data: { kind: "feature_listing", listingId: item.id } }))}>Feature 7 days · ₦2,500</button>
+                <button className="ghost" type="button" onClick={() => pay("feature_listing", item.id)}>Feature 7 days · ₦2,500</button>
               </div>
             )}
           </div>
