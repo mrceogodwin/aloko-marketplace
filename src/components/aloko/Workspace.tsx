@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { UserButton } from "@/lib/auth/gates";
 import { SaleRecord } from "@/components/aloko/ChatDesk";
 import {
@@ -17,8 +17,11 @@ import {
   setListingState,
   setSuspended,
   submitVerification,
+  listTickets,
+  replyTicket,
   type AlokoRole,
   type DashboardData,
+  type HomeSection,
 } from "@/lib/aloko.functions";
 
 const PUBLIC: { id: AlokoRole; label: string }[] = [
@@ -48,6 +51,8 @@ export function Workspace({
   onDiscover,
   onGiveaways,
   onError,
+  home,
+  onHome,
 }: {
   data: DashboardData;
   onRefresh: () => void;
@@ -55,6 +60,8 @@ export function Workspace({
   onDiscover: () => void;
   onGiveaways: () => void;
   onError: (message: string) => void;
+  home: HomeSection[];
+  onHome: (id: string, change: { enabled?: boolean; direction?: "up" | "down" }) => void;
 }) {
   const { profile } = data;
   const role = profile.accountType;
@@ -65,6 +72,13 @@ export function Workspace({
   const [cacRef, setCacRef] = useState(profile.cacRef);
   const [service, setService] = useState({ title: "", description: "", areas: "Lagos", priceNote: "Request a quote" });
   const [staffEmail, setStaffEmail] = useState("");
+  const [tickets, setTickets] = useState<{ id: string; subject: string; email: string; status: string }[]>([]);
+  const [ticketReply, setTicketReply] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (role !== "moderator" && role !== "super_admin") return;
+    listTickets().then(setTickets).catch(() => setTickets([]));
+  }, [role, data]);
 
   const run = (work: Promise<unknown>) => {
     void work.then(onRefresh).catch((err: unknown) => onError(err instanceof Error ? err.message : "That did not save."));
@@ -214,11 +228,39 @@ export function Workspace({
               </div>
             </article>
           ))}
+          <h3 className="mine-head">Support tickets</h3>
+          {tickets.length === 0 ? <p className="type-lead">No one is waiting on support.</p> : tickets.map((item) => (
+            <article key={item.id} className="queue-card">
+              <div>
+                <strong>{item.subject}</strong>
+                <span>{item.email} · {item.status}</span>
+                <input value={ticketReply[item.id] ?? ""} onChange={(event) => setTicketReply({ ...ticketReply, [item.id]: event.target.value })} placeholder="Reply as Aloko" />
+                <div className="queue-actions">
+                  <button className="primary" type="button" onClick={() => run(replyTicket({ data: { id: item.id, body: ticketReply[item.id] ?? "" } }).then(() => listTickets().then(setTickets)))}>Reply</button>
+                </div>
+              </div>
+            </article>
+          ))}
         </>
       )}
 
       {role === "super_admin" && (
         <>
+          <h3 className="mine-head">Home sections</h3>
+          <p className="type-lead">A section only appears when real listings match it. Hide or reorder them here.</p>
+          {home.map((section) => (
+            <article key={section.id} className="queue-card">
+              <div>
+                <strong>{section.title}</strong>
+                <span>{section.enabled ? "On the home" : "Hidden"}</span>
+                <div className="queue-actions">
+                  <button className="ghost" type="button" onClick={() => onHome(section.id, { direction: "up" })}>Up</button>
+                  <button className="ghost" type="button" onClick={() => onHome(section.id, { direction: "down" })}>Down</button>
+                  <button className="primary" type="button" onClick={() => onHome(section.id, { enabled: !section.enabled })}>{section.enabled ? "Hide" : "Show"}</button>
+                </div>
+              </div>
+            </article>
+          ))}
           <h3 className="mine-head">Payments waiting</h3>
           {data.waitingOrders.length === 0 ? <p className="type-lead">No payments are waiting.</p> : data.waitingOrders.map((item) => (
             <article key={item.id} className="queue-card">

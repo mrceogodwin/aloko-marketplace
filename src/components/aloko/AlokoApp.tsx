@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GROK_PROVIDERS, authClient, signIn } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { activateRole, createListing, decideListing, getDashboard, listLiveListings, listTape, openThread, placeOrder, recordView, saveRadius, toggleSave, type AlokoRole, type AlokoRow, type DashboardData } from "@/lib/aloko.functions";
+import { activateRole, addTicketNote, createListing, decideListing, getDashboard, listHome, listLiveListings, listLiveServices, listTape, openTicket, openThread, placeOrder, readTicket, recordView, saveRadius, setHomeSection, toggleSave, type AlokoRole, type AlokoRow, type DashboardData, type HomeSection, type TicketView } from "@/lib/aloko.functions";
 import { ChatDesk } from "@/components/aloko/ChatDesk";
 import { Onboarding } from "@/components/aloko/Onboarding";
 import { Workspace } from "@/components/aloko/Workspace";
@@ -576,6 +576,9 @@ export function AlokoApp() {
   const [saved, setSaved] = useState<string[]>([]);
   const [savedOnly, setSavedOnly] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [support, setSupport] = useState(false);
+  const [homeSections, setHomeSections] = useState<HomeSection[]>([]);
+  const [liveServices, setLiveServices] = useState<{ id: string; title: string; areas: string; priceNote: string }[]>([]);
   const [toast, setToast] = useState("");
   const [selected, setSelected] = useState<Listing | null>(null);
   const [mine, setMine] = useState<Listing[]>([]);
@@ -653,6 +656,20 @@ export function AlokoApp() {
       })
       .catch(() => {
         if (!cancel) setTapeAds([]);
+      });
+    listHome()
+      .then((rows) => {
+        if (!cancel) setHomeSections(rows);
+      })
+      .catch(() => {
+        if (!cancel) setHomeSections([]);
+      });
+    listLiveServices()
+      .then((rows) => {
+        if (!cancel) setLiveServices(rows);
+      })
+      .catch(() => {
+        if (!cancel) setLiveServices([]);
       });
     return () => {
       cancel = true;
@@ -769,7 +786,7 @@ export function AlokoApp() {
     setCategory(nextCategory);
     setTab("buy");
     setMenu(false);
-    setDesk(false); setPricing(false);
+    setDesk(false); setPricing(false); setSupport(false);
     setSelected(null);
   };
 
@@ -915,19 +932,27 @@ export function AlokoApp() {
           </div>
           {menu && (
             <div className="menu-panel" role="menu">
-              <button type="button" onClick={() => { setTab("home"); setSavedOnly(false); setDesk(false); setPricing(false); setMenu(false); }}>Home</button>
-              <button type="button" onClick={() => { setSavedOnly(true); setTab("buy"); setDesk(false); setPricing(false); setMenu(false); }}>Saved ({saved.length})</button>
-              <button type="button" onClick={() => { setTab("sell"); setDesk(false); setPricing(false); setMenu(false); }}>Start selling</button>
-              <button type="button" onClick={() => { setPricing(true); setDesk(false); setMenu(false); }}>Pricing</button>
-              {staff && <button type="button" onClick={() => { setDesk(true); setPricing(false); setMenu(false); }}>Review queue</button>}
-              <button type="button" onClick={() => { setTab("account"); setDesk(false); setPricing(false); setMenu(false); }}>Account</button>
-              <a href="mailto:hello@aloko.ng">Email support · hello@aloko.ng</a>
+              {!user && <button className="menu-signin" type="button" onClick={() => { setTab("account"); setSupport(false); setDesk(false); setPricing(false); setMenu(false); }}>Sign up / Log in</button>}
+              <button type="button" onClick={() => { setTab("home"); setSavedOnly(false); setDesk(false); setPricing(false); setSupport(false); setMenu(false); }}>Home</button>
+              <button type="button" onClick={() => { setSavedOnly(true); setTab("buy"); setDesk(false); setPricing(false); setSupport(false); setMenu(false); }}>Saved ({saved.length})</button>
+              <button type="button" onClick={() => { setTab("sell"); setDesk(false); setPricing(false); setSupport(false); setMenu(false); }}>Start selling</button>
+              <button type="button" onClick={() => openBuy("giveaway")}>Pass it on</button>
+              <button type="button" onClick={() => openBuy("all", "All")}>Browse</button>
+              <button type="button" onClick={() => { setPricing(true); setDesk(false); setSupport(false); setMenu(false); }}>Pricing</button>
+              {staff && <button type="button" onClick={() => { setDesk(true); setPricing(false); setSupport(false); setMenu(false); }}>Review queue</button>}
+              <button type="button" onClick={() => { setTab("account"); setDesk(false); setPricing(false); setSupport(false); setMenu(false); }}>Account</button>
+              <button className="menu-support" type="button" onClick={() => { setSupport(true); setDesk(false); setPricing(false); setMenu(false); }}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3" fill="none" stroke="currentColor" strokeWidth="1.7" /><path d="M6 19c1-3 3.2-4.5 6-4.5S17 16 18 19" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /><path d="M4 12a2 2 0 0 1 2-2v5a2 2 0 0 1-2-2zM20 12a2 2 0 0 0-2-2v5a2 2 0 0 0 2-2z" fill="none" stroke="currentColor" strokeWidth="1.7" /></svg>
+                Contact support
+              </button>
             </div>
           )}
         </header>
 
         <main className="aloko-main">
-          {pricing ? (
+          {support ? (
+            <SupportDesk email={user?.primaryEmail ?? ""} name={user?.displayName ?? ""} />
+          ) : pricing ? (
             <PricingPage onPlan={(kind) => {
               if (!user) {
                 setPricing(false);
@@ -995,6 +1020,12 @@ export function AlokoApp() {
               onPricing={() => { setPricing(true); setDesk(false); }}
               onAccount={() => setTab("account")}
               tape={tapeBits}
+              sections={homeSections.filter((section) => section.enabled).map((section) => ({ id: section.id, title: section.title }))}
+              services={liveServices}
+              onService={(service) => {
+                setSupport(true);
+                setToast(`Ask about ${service.title}. Write it in support and Aloko keeps the ticket.`);
+              }}
             />
           )}
 
@@ -1226,6 +1257,12 @@ export function AlokoApp() {
                 onDiscover={() => openBuy("all", "All")}
                 onGiveaways={() => openBuy("giveaway")}
                 onError={(message) => setToast(message)}
+                home={homeSections}
+                onHome={(id, change) => {
+                  void setHomeSection({ data: { id, ...change } })
+                    .then(() => listHome().then(setHomeSections))
+                    .catch((err: unknown) => setToast(err instanceof Error ? err.message : "Could not update the home."));
+                }}
               />
             )
           )}
@@ -1313,6 +1350,85 @@ export function AlokoApp() {
 
         {toast && <div className="toast">{toast}</div>}
       </div>
+    </div>
+  );
+}
+
+function SupportDesk({ email, name }: { email: string; name: string }) {
+  const [mail, setMail] = useState(email);
+  const [who, setWho] = useState(name);
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [note, setNote] = useState("");
+  const [ticket, setTicket] = useState<TicketView | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const id = localStorage.getItem("aloko-ticket");
+    if (!id) return;
+    readTicket({ data: id }).then(setTicket).catch(() => localStorage.removeItem("aloko-ticket"));
+  }, []);
+
+  const send = (live: boolean) => {
+    const nextBody = body.trim() || (live ? "I need to speak with someone at Aloko." : "");
+    void openTicket({
+      data: {
+        email: mail,
+        name: who || "Aloko member",
+        subject: (live && subject.trim().length < 3 ? "Live support" : subject).trim(),
+        body: nextBody,
+      },
+    })
+      .then((created) => {
+        localStorage.setItem("aloko-ticket", created.id);
+        return readTicket({ data: created.id });
+      })
+      .then((next) => {
+        setTicket(next);
+        setError("");
+        setBody("");
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not open that ticket."));
+  };
+
+  const follow = () => {
+    if (!ticket) return;
+    void addTicketNote({ data: { id: ticket.id, email: ticket.email, body: note } })
+      .then(() => readTicket({ data: ticket.id }))
+      .then((next) => {
+        setTicket(next);
+        setNote("");
+        setError("");
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not send that."));
+  };
+
+  return (
+    <div className="sheet support-desk form">
+      <h2>Contact support</h2>
+      <p className="type-lead">A person at Aloko reads this. It is not an automated reply. The ticket stays on your account email.</p>
+      {ticket ? (
+        <>
+          <p className="type-lead">{ticket.subject} · {ticket.status}</p>
+          {ticket.messages.map((message) => (
+            <p key={message.id} className={message.sender === "staff" ? "support-note staff" : "support-note"}>{message.body}</p>
+          ))}
+          <label>Reply<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add to this ticket" /></label>
+          <button className="primary" type="button" onClick={follow}>Send</button>
+        </>
+      ) : (
+        <>
+          <label>Name<input value={who} onChange={(event) => setWho(event.target.value)} /></label>
+          <label>Email<input value={mail} onChange={(event) => setMail(event.target.value)} inputMode="email" placeholder="you@email.com" /></label>
+          <label>Subject<input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="A listing, a payment, an account" /></label>
+          <label>Message<textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="Tell us what happened." /></label>
+          <div className="detail-actions">
+            <button className="primary" type="button" onClick={() => send(false)}>Send ticket</button>
+            <button className="ghost" type="button" onClick={() => send(true)}>Live support</button>
+          </div>
+        </>
+      )}
+      {error && <p className="err">{error}</p>}
     </div>
   );
 }

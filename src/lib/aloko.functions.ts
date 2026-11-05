@@ -1055,6 +1055,166 @@ export const decideTape = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const listLiveServices = createServerFn({ method: "GET" }).handler(async () => {
+  const sql = await getSql();
+  return sql<{ id: string; title: string; areas: string; priceNote: string }>`
+    select id, title, areas, price_note as "priceNote"
+    from aloko_services where status = 'active' order by created_at desc limit 12
+  `;
+});
+
+const DEFAULT_HOME: [string, string][] = [
+  ["just_listed", "Just listed"],
+  ["free", "Pass it on"],
+  ["near", "Near you"],
+  ["picks", "This week’s picks"],
+  ["clearout", "Clear-out finds"],
+  ["drops", "Price drops"],
+  ["good", "Good as new"],
+  ["second", "Second life"],
+  ["wardrobe", "Wardrobe reboot"],
+  ["electronics", "Electronics worth buying"],
+  ["furniture", "Furniture around you"],
+  ["home", "Home essentials"],
+  ["verified", "Verified sellers"],
+  ["services", "Need help clearing out?"],
+];
+
+export type HomeSection = { id: string; title: string; enabled: boolean; sort: number };
+
+export const listHome = createServerFn({ method: "GET" }).handler(async () => {
+  const sql = await getSql();
+  const existing = await sql<{ n: number }>`select count(*)::int as n from aloko_home`;
+  if ((existing[0]?.n ?? 0) === 0) {
+    for (let i = 0; i < DEFAULT_HOME.length; i += 1) {
+      const [id, title] = DEFAULT_HOME[i];
+      await sql`insert into aloko_home (id, title, enabled, sort) values (${id}, ${title}, true, ${i + 1}) on conflict (id) do nothing`;
+    }
+  }
+  return sql<HomeSection>`select id, title, enabled, sort from aloko_home order by sort asc, id asc`;
+});
+
+export const setHomeSection = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { id: string; enabled?: boolean; direction?: "up" | "down" }) => ({
+    id: text(input?.id, 40),
+    enabled: typeof input?.enabled === "boolean" ? input.enabled : undefined,
+    direction: input?.direction === "up" || input?.direction === "down" ? input.direction : undefined,
+  }))
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const roles = await rolesOf(sql, context.userId);
+    if (!roles.includes("super_admin")) throw new Error("Only a super admin can change the home.");
+    if (typeof data.enabled === "boolean") {
+      await sql`update aloko_home set enabled = ${data.enabled} where id = ${data.id}`;
+    }
+    if (data.direction) {
+      const rows = await sql<{ id: string; sort: number }>`select id, sort from aloko_home order by sort asc, id asc`;
+      const index = rows.findIndex((row) => row.id === data.id);
+      const swap = data.direction === "up" ? index - 1 : index + 1;
+      if (index >= 0 && rows[swap]) {
+        await sql`update aloko_home set sort = ${rows[swap].sort} where id = ${rows[index].id}`;
+        await sql`update aloko_home set sort = ${rows[index].sort} where id = ${rows[swap].id}`;
+      }
+    }
+    await audit(sql, context.userId, "home-section", data.id);
+    return { ok: true };
+  });
+
+export type TicketMessage = { id: string; sender: string; body: string };
+export type TicketView = { id: string; subject: string; status: string; email: string; messages: TicketMessage[] };
+
+export const myTicket = createServerFn({ method: "GET" }).handler(async () => {
+  const sql = await getSql();
+  return null as TicketView | null;
+});
+
+export const openTicket = createServerFn({ method: "POST" })
+  .validator((input: { email: string; name: string; subject: string; body: string }) => {
+    const email = text(input?.email, 80).toLowerCase();
+    const name = text(input?.name, 40) || "Aloko member";
+    const subject = text(input?.subject, 80);
+    const body = text(input?.body, 1000);
+    if (!email.includes("@")) throw new Error("Add an email so support can reply.");
+    if (subject.length < 3) throw new Error("Add a subject.");
+    if (body.length < 8) throw new Error("Write a short message.");
+    return { email, name, subject, body };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const id = crypto.randomUUID();
+    await sql`
+      insert into aloko_tickets (id, email, name, subject) values (${id}, ${data.email}, ${data.name}, ${data.subject})
+    `;
+    await sql`
+      insert into aloko_ticket_messages (id, ticket_id, sender, body)
+      values (${crypto.randomUUID()}, ${id}, 'user', ${data.body})
+    `;
+    return { id };
+  });
+
+export const readTicket = createServerFn({ method: "POST" })
+  .validator((id: string) => text(id, 80))
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const tickets = await sql<{ id: string; subject: string; status: string; email: string }>`
+      select id, subject, status, email from aloko_tickets where id = ${data}
+    `;
+    const ticket = tickets[0];
+    if (!ticket) throw new Error("That ticket is not here.");
+    const messages = await sql<TicketMessage>`
+      select id, sender, body from aloko_ticket_messages where ticket_id = ${data} order by created_at asc
+    `;
+    return { ...ticket, messages };
+  });
+
+export const replyTicket = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { id: string; body: string }) => ({ id: text(input?.id, 80), body: text(input?.body, 1000) }))
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const roles = await rolesOf(sql, context.userId);
+    if (!isStaff(roles)) throw new Error("Only Aloko staff can reply as support.");
+    if (data.body.length < 2) throw new Error("Write a reply.");
+    await sql`
+      insert into aloko_ticket_messages (id, ticket_id, sender, body)
+      values (${crypto.randomUUID()}, ${data.id}, 'staff', ${data.body})
+    `;
+    await audit(sql, context.userId, "support-reply", data.id);
+    return { ok: true };
+  });
+
+export const listTickets = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    const roles = await rolesOf(sql, context.userId);
+    if (!isStaff(roles)) throw new Error("Only Aloko staff can read support tickets.");
+    return sql<{ id: string; subject: string; email: string; status: string }>`
+      select id, subject, email, status from aloko_tickets order by created_at desc limit 30
+    `;
+  });
+
+export const addTicketNote = createServerFn({ method: "POST" })
+  .validator((input: { id: string; email: string; body: string }) => ({
+    id: text(input?.id, 80),
+    email: text(input?.email, 80).toLowerCase(),
+    body: text(input?.body, 1000),
+  }))
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    if (data.body.length < 2) throw new Error("Write a message.");
+    const rows = await sql<{ id: string }>`
+      select id from aloko_tickets where id = ${data.id} and email = ${data.email} and status = 'open'
+    `;
+    if (!rows[0]) throw new Error("That ticket is closed.");
+    await sql`
+      insert into aloko_ticket_messages (id, ticket_id, sender, body)
+      values (${crypto.randomUUID()}, ${data.id}, 'user', ${data.body})
+    `;
+    return { ok: true };
+  });
+
 export const saveRadius = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((km: number) => {

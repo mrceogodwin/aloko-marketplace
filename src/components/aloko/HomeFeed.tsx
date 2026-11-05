@@ -86,6 +86,9 @@ export function HomeFeed({
   onPricing,
   onAccount,
   tape,
+  sections,
+  services,
+  onService,
 }: {
   items: HomeItem[];
   saved: string[];
@@ -100,6 +103,9 @@ export function HomeFeed({
   onPricing: () => void;
   onAccount: () => void;
   tape: { id: string; text: string; mark: string }[];
+  sections: { id: string; title: string }[];
+  services: { id: string; title: string; areas: string; priceNote: string }[];
+  onService: (service: { id: string; title: string; areas: string; priceNote: string }) => void;
 }) {
   const [lane, setLane] = useState<Lane>("all");
   const [tabsOn, setTabsOn] = useState(true);
@@ -136,7 +142,22 @@ export function HomeFeed({
   }, []);
 
   const pool = lane === "all" || lane === "service" ? items : items.filter((item) => item.kind === lane);
-  const paid = items.filter((item) => item.featured);
+  const rowsFor = (id: string) => {
+    if (id === "just_listed") return pool.slice(0, 8);
+    if (id === "free") return pool.filter((item) => item.kind === "giveaway");
+    if (id === "near") return around.map((row) => row.item);
+    if (id === "picks") return pool.filter((item) => item.kind === "sale").slice(0, 8);
+    if (id === "clearout") return pool.filter((item) => item.kind === "bulk");
+    if (id === "drops") return pool.filter((item) => (item.was ?? 0) > item.price);
+    if (id === "good") return pool.filter((item) => item.condition === "Like new");
+    if (id === "second") return pool.filter((item) => item.condition === "Good" && item.kind === "sale");
+    if (id === "wardrobe") return pool.filter((item) => item.category === "Fashion");
+    if (id === "electronics") return pool.filter((item) => item.category === "Electronics");
+    if (id === "furniture") return pool.filter((item) => item.category === "Furniture");
+    if (id === "home") return pool.filter((item) => item.category === "Home & Living");
+    if (id === "verified") return pool.filter((item) => item.verified);
+    return [];
+  };
   const slides = useMemo(() => {
     const cards: ({ type: "item"; item: HomeItem } | { type: "campaign"; id: string; kicker: string; title: string; line: string; image: string; kind: "all" | HomeItem["kind"]; category: string })[] = items.map((item) => ({ type: "item", item }));
     for (const campaign of CAMPAIGNS) cards.push({ type: "campaign", ...campaign });
@@ -324,44 +345,24 @@ export function HomeFeed({
             ))}
           </div>
 
-          <Row title="This week’s picks" items={pool.slice(0, 8)} saved={saved} onOpen={onOpen} onSave={onSave} onAll={() => onBrowse(lane === "all" ? "all" : lane, "All")} />
-          <section className="featured">
-            <div className="section-head"><h2>Moving now</h2></div>
-            <div className="move-grid">
-              {pool.slice(0, 4).map((item) => (
-                <Card key={item.id} item={item} saved={saved.includes(item.id)} onOpen={onOpen} onSave={onSave} />
-              ))}
-            </div>
-          </section>
-
-          {paid[0] && (
-            <button className="ad-banner" type="button" onClick={() => onOpen(paid[0].id)}>
-              <span>Paid this week · stays inside Aloko</span>
-              <strong>{paid[0].seller}</strong>
-              <em>{paid[0].title}</em>
-            </button>
-          )}
-
-          <Row title="Pickup this week" items={pool.filter((item) => item.coverage !== "nationwide").slice(0, 8)} saved={saved} onOpen={onOpen} onSave={onSave} onAll={() => onBrowse("all", "All")} />
-
-          {paid.length > 0 && [...new Set(paid.map((item) => item.seller))].map((seller) => (
-            <Row
-              key={seller}
-              title={seller}
-              note="This week"
-              items={paid.filter((item) => item.seller === seller)}
-              saved={saved}
-              onOpen={onOpen}
-              onSave={onSave}
-              onAll={() => onBrowse("all", "All")}
-            />
+          {sections.map((section) => section.id === "services" ? (
+            services.length === 0 ? null : (
+            <section key={section.id} className="featured">
+              <div className="section-head"><h2>{section.title}</h2></div>
+              <div className="h-row">
+                {services.map((service) => (
+                  <button key={service.id} className="service-card" type="button" onClick={() => onService(service)}>
+                    <strong>{service.title}</strong>
+                    <span>{service.areas}</span>
+                    <em>{service.priceNote}</em>
+                  </button>
+                ))}
+              </div>
+            </section>
+            )
+          ) : (
+            <Row key={section.id} title={section.title} items={rowsFor(section.id)} saved={saved} onOpen={onOpen} onSave={onSave} onAll={() => onBrowse(section.id === "free" ? "giveaway" : section.id === "clearout" ? "bulk" : "all", section.id === "wardrobe" ? "Fashion" : section.id === "electronics" ? "Electronics" : section.id === "furniture" ? "Furniture" : section.id === "home" ? "Home & Living" : "All")} />
           ))}
-
-          <Row title="Home faves" items={pool.filter((item) => item.category === "Furniture" || item.category === "Home & Living")} saved={saved} onOpen={onOpen} onSave={onSave} onAll={() => onBrowse("all", "Furniture")} />
-          <Row title="Giveaways" items={pool.filter((item) => item.kind === "giveaway")} saved={saved} onOpen={onOpen} onSave={onSave} onAll={() => onBrowse("giveaway", "All")} />
-          <Row title="Bulk lots" items={pool.filter((item) => item.kind === "bulk")} saved={saved} onOpen={onOpen} onSave={onSave} onAll={() => onBrowse("bulk", "All")} />
-          <Row title="Hot this week" items={pool.filter((item) => item.verified)} saved={saved} onOpen={onOpen} onSave={onSave} onAll={() => onBrowse("all", "All")} />
-
           <div className="promos">
             <button className="promo dark" type="button" onClick={onClearout}>
               <b>Book Decluttering Services</b>
@@ -376,18 +377,6 @@ export function HomeFeed({
               <span className="promo-go">→</span>
             </button>
           </div>
-
-          <Row title="Featured Listings" items={pool.filter((item) => item.kind === "sale").slice(0, 8)} saved={saved} onOpen={onOpen} onSave={onSave} onAll={() => onBrowse("all", "All")} />
-          {around.length > 0 && (
-            <section className="featured">
-              <div className="section-head"><h2>Around you</h2></div>
-              <div className="h-row">
-                {around.map(({ item, km }) => (
-                  <Card key={item.id} item={item} saved={saved.includes(item.id)} onOpen={onOpen} onSave={onSave} extra={`~${km} km`} />
-                ))}
-              </div>
-            </section>
-          )}
         </>
       )}
 
