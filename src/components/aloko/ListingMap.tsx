@@ -1,4 +1,4 @@
-import { PLACES } from "@/lib/places";
+import { useState } from "react";
 
 export type MapPin = {
   id: string;
@@ -9,14 +9,6 @@ export type MapPin = {
   label: string;
 };
 
-function project(lat: number, lng: number) {
-  const x = ((lng - 2.6) / (14.8 - 2.6)) * 300 + 24;
-  const y = ((14 - lat) / (14 - 4.1)) * 360 + 18;
-  return { x, y };
-}
-
-const CITIES = Array.from(new Map(PLACES.map((place) => [place.city, place])).values());
-
 export function ListingMap({
   pins,
   you,
@@ -26,34 +18,26 @@ export function ListingMap({
   you: { lat: number; lng: number } | null;
   onOpen: (id: string) => void;
 }) {
-  const placed = pins.map((pin, index) => {
-    const point = project(pin.lat, pin.lng);
-    return { ...pin, x: point.x + (index % 3) * 6, y: point.y + (index % 2) * 6 };
-  });
-  const me = you ? project(you.lat, you.lng) : null;
+  const [active, setActive] = useState(pins[0]?.id ?? "");
+  const pin = pins.find((item) => item.id === active) ?? pins[0];
+  const center = pin ?? you ?? { lat: 9.082, lng: 8.6753 };
+  const src = `https://www.google.com/maps?q=${center.lat},${center.lng}&z=${pin ? 13 : 6}&hl=en&output=embed`;
 
   return (
-    <div className="area-map" role="img" aria-label="Listings by area. Pins are neighbourhoods, not houses.">
-      <svg viewBox="0 0 348 400" className="area-svg">
-        <rect x="8" y="8" width="332" height="384" rx="18" />
-        {CITIES.map((city) => {
-          const point = project(city.lat, city.lng);
-          return (
-            <g key={city.city}>
-              <circle cx={point.x} cy={point.y} r="2" />
-              <text x={point.x + 6} y={point.y - 4}>{city.city}</text>
-            </g>
-          );
-        })}
-        {me && <circle className="you" cx={me.x} cy={me.y} r="8" />}
-        {placed.map((pin) => (
-          <g key={pin.id} className="pin" onClick={() => onOpen(pin.id)} role="button">
-            <circle cx={pin.x} cy={pin.y} r="7" />
-            <text x={pin.x + 10} y={pin.y + 4}>{pin.label}</text>
-          </g>
+    <div className="gmap">
+      <iframe title="Google map" src={src} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+      <div className="pin-row">
+        {pins.map((item) => (
+          <button key={item.id} className={item.id === pin?.id ? "seg-btn on" : "seg-btn"} type="button" onClick={() => setActive(item.id)}>
+            {item.label}
+          </button>
         ))}
-      </svg>
-      <p className="type-lead">Pins sit on an area, not a house. {me ? "The ring is your area." : "Use your area to see distance."}</p>
+      </div>
+      {pin && (
+        <button className="seg-btn on" type="button" onClick={() => onOpen(pin.id)}>
+          {pin.title} · {pin.price}
+        </button>
+      )}
     </div>
   );
 }

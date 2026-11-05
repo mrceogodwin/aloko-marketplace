@@ -1213,6 +1213,66 @@
   stroke-width: 2;
 }
 
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 2px 0 10px;
+}
+
+.seg-btn {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #123018;
+  background: linear-gradient(180deg, #ffffff 0%, #e5eee2 100%);
+  box-shadow: inset 0 1px 0 #ffffff, 0 2px 0 #b7c4b3, 0 4px 8px rgba(1, 33, 21, 0.16);
+}
+
+.seg-btn.on {
+  background: linear-gradient(180deg, #e8ff74 0%, #c5fb02 100%);
+  box-shadow: inset 0 1px 0 #f6ffc9, 0 2px 0 #7ea000, 0 4px 8px rgba(1, 33, 21, 0.16);
+}
+
+.seg-btn:active {
+  transform: translateY(2px);
+  box-shadow: inset 0 1px 0 #f6ffc9, 0 1px 0 #7ea000;
+}
+
+.near-select {
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  color: #123018;
+  background: linear-gradient(180deg, #ffffff 0%, #e5eee2 100%);
+  box-shadow: inset 0 1px 0 #ffffff, 0 2px 0 #b7c4b3, 0 4px 8px rgba(1, 33, 21, 0.16);
+}
+
+.gmap iframe {
+  width: 100%;
+  height: 320px;
+  border: 0;
+  border-radius: 18px;
+  box-shadow: 0 8px 0 #d5dfd2, 0 14px 24px rgba(1, 33, 21, 0.12);
+}
+
+.pin-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 10px 0;
+  padding-bottom: 4px;
+}
+
 .view-switch {
   display: flex;
   gap: 8px;

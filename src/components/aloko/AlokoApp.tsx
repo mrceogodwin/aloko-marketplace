@@ -1046,36 +1046,39 @@ export function AlokoApp() {
           {!desk && tab === "buy" && (
             <div className="sheet">
               <h2>{kind === "giveaway" ? "Giveaways" : kind === "bulk" ? "Bulk deals" : category === "All" ? "Browse listings" : category}</h2>
-              <div className="view-switch">
-                <button className={asMap ? "ghost" : "primary"} type="button" onClick={() => setAsMap(false)}>List</button>
-                <button className={asMap ? "primary" : "ghost"} type="button" onClick={() => setAsMap(true)}>Map</button>
-                <button className="ghost" type="button" onClick={() => setAskNear(true)}>Use my area</button>
-              </div>
-              {askNear && (
+              {user ? (
+                <div className="seg">
+                  <button className={asMap ? "seg-btn" : "seg-btn on"} type="button" onClick={() => setAsMap(false)}>List</button>
+                  <button className={asMap ? "seg-btn on" : "seg-btn"} type="button" onClick={() => setAsMap(true)}>Map</button>
+                  <button className="seg-btn" type="button" onClick={() => setAskNear(true)}>Near me</button>
+                  <select className="near-select" aria-label="Distance" value={radiusKm} onChange={(event) => {
+                    const next = Number(event.target.value);
+                    setRadiusKm(next);
+                    void saveRadius({ data: next }).catch(() => setToast("That distance did not save."));
+                  }}>
+                    <option value={0}>Anywhere</option>
+                    <option value={5}>5 km</option>
+                    <option value={10}>10 km</option>
+                    <option value={25}>25 km</option>
+                    <option value={50}>50 km</option>
+                    <option value={100}>100 km</option>
+                  </select>
+                </div>
+              ) : (
+                <p className="type-lead">Sign in to use the map and nearby. Anyone can still browse the list.</p>
+              )}
+              {user && askNear && (
                 <div className="form">
-                  <p className="type-lead">Find deals near you. Aloko uses this once to pick your nearest area. Your precise location is not saved, and it is never shown to sellers.</p>
-                  <button className="primary" type="button" onClick={useArea}>Use my current location</button>
-                  <button className="ghost" type="button" onClick={() => setAskNear(false)}>Choose a city instead</button>
+                  <p className="type-lead">Aloko uses this once to pick your nearest area. Your precise location is not saved, and it is never shown to sellers.</p>
+                  <div className="seg">
+                    <button className="seg-btn on" type="button" onClick={useArea}>Allow</button>
+                    <button className="seg-btn" type="button" onClick={() => setAskNear(false)}>Not now</button>
+                  </div>
                 </div>
               )}
-              <label className="form">
-                How far
-                <select aria-label="Distance" value={radiusKm} onChange={(event) => {
-                  const next = Number(event.target.value);
-                  setRadiusKm(next);
-                  if (user) void saveRadius({ data: next }).catch(() => setToast("That distance did not save."));
-                }}>
-                  <option value={0}>Anywhere in Nigeria</option>
-                  <option value={5}>Within 5 km</option>
-                  <option value={10}>Within 10 km</option>
-                  <option value={25}>Within 25 km</option>
-                  <option value={50}>Within 50 km</option>
-                  <option value={100}>Within 100 km</option>
-                </select>
-              </label>
               {visible.length === 0 ? (
                 <p className="empty">No listings in this filter. Change city, category, or search.</p>
-              ) : asMap ? (
+              ) : user && asMap ? (
                 <ListingMap
                   you={originLat != null && originLng != null ? { lat: originLat, lng: originLng } : null}
                   onOpen={(id) => {
