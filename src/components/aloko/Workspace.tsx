@@ -7,6 +7,8 @@ import {
   decideListing,
   decideService,
   grantModerator,
+  placeOrder,
+  confirmOrder,
   reviewBusiness,
   saveMyProfile,
   setActiveRole,
@@ -98,6 +100,10 @@ export function Workspace({
             <button className="primary" type="button" onClick={onDiscover}>Discover</button>
             <button className="ghost" type="button" onClick={onGiveaways}>Giveaways</button>
           </div>
+          <h3 className="mine-head">My deals</h3>
+          {data.deals.length === 0 ? <p className="type-lead">Nothing agreed yet. Negotiate in the chat. You pay the seller, not Aloko.</p> : data.deals.map((item) => (
+            <p key={item.id} className="type-lead">{item.title} · {item.soldPrice != null ? money(item.soldPrice) : "Agreed"} · {item.city}</p>
+          ))}
           <h3 className="mine-head">Recently viewed</h3>
           {data.recent.length === 0 ? <p className="type-lead">Open a listing and it will show up here.</p> : data.recent.map((item) => <p key={item.id} className="type-lead">{item.title}</p>)}
           <form className="form" onSubmit={(event) => { event.preventDefault(); run(saveMyProfile({ data: { displayName: name, serviceArea: profile.serviceArea, businessName: profile.businessName, city, interests } })); }}>
@@ -115,8 +121,11 @@ export function Workspace({
             <div className="stat"><b>{data.listings.filter((item) => item.status === "active" && !item.sold).length}</b><span>Live</span></div>
             <div className="stat"><b>{data.creditsLeft}</b><span>Free listings left</span></div>
           </div>
-          <p className="type-lead">Three listings are free. Packages are not open yet, so a fourth listing waits.</p>
+          <p className="type-lead">Three listings are free. Another one is ₦1,000, and it opens only after Aloko confirms the payment. No card is charged in the app.</p>
+          <button className="ghost" type="button" onClick={() => run(placeOrder({ data: { kind: "extra_listing" } }))}>Buy one listing · ₦1,000</button>
           <button className="primary" type="button" onClick={onSell}>Add listing</button>
+          {data.orders.length > 0 && <h3 className="mine-head">Payments</h3>}
+          {data.orders.map((item) => <p key={item.id} className="type-lead">{item.kind.replaceAll("_", " ")} · {money(item.amount)} · {item.status}</p>)}
           <ListingList listings={data.listings} onRefresh={onRefresh} onError={onError} />
         </>
       )}
@@ -129,7 +138,8 @@ export function Workspace({
             <label>CAC reference<input value={cacRef} onChange={(event) => setCacRef(event.target.value)} placeholder="RC number" /></label>
             <button className="primary" type="submit">Submit for verification</button>
           </form>
-          <p className="type-lead">{data.creditsLeft} catalogue spaces left before subscriptions open. Bulk upload and team seats are not open yet.</p>
+          <p className="type-lead">{data.creditsLeft} catalogue spaces left. A confirmed business month opens 100. No card is charged in the app.</p>
+          <button className="ghost" type="button" onClick={() => run(placeOrder({ data: { kind: "business_month" } }))}>Business month · ₦12,000</button>
           <button className="primary" type="button" onClick={onSell}>Add product</button>
           <ListingList listings={data.listings} onRefresh={onRefresh} onError={onError} />
         </>
@@ -137,6 +147,7 @@ export function Workspace({
 
       {role === "service" && (
         <>
+          <button className="ghost" type="button" onClick={() => run(placeOrder({ data: { kind: "service_month" } }))}>Service month · ₦6,000</button>
           <form className="form" onSubmit={(event) => { event.preventDefault(); run(createService({ data: service }).then(() => setService({ title: "", description: "", areas: service.areas, priceNote: service.priceNote }))); }}>
             <label>Service<input value={service.title} onChange={(event) => setService({ ...service, title: event.target.value })} placeholder="Home decluttering" /></label>
             <label>What you do<textarea value={service.description} onChange={(event) => setService({ ...service, description: event.target.value })} /></label>
@@ -191,6 +202,18 @@ export function Workspace({
 
       {role === "super_admin" && (
         <>
+          <h3 className="mine-head">Payments waiting</h3>
+          {data.waitingOrders.length === 0 ? <p className="type-lead">No payments are waiting.</p> : data.waitingOrders.map((item) => (
+            <article key={item.id} className="queue-card">
+              <div>
+                <strong>{item.email}</strong>
+                <span>{item.kind.replaceAll("_", " ")} · {money(item.amount)}</span>
+                <div className="queue-actions">
+                  <button className="primary" type="button" onClick={() => run(confirmOrder({ data: item.id }))}>Confirm payment</button>
+                </div>
+              </div>
+            </article>
+          ))}
           <h3 className="mine-head">People</h3>
           <form className="form" onSubmit={(event) => { event.preventDefault(); run(grantModerator({ data: staffEmail })); }}>
             <label>Make this email a moderator<input value={staffEmail} onChange={(event) => setStaffEmail(event.target.value)} placeholder="name@email.com" /></label>
@@ -249,6 +272,7 @@ function ListingList({ listings, onRefresh, onError }: { listings: DashboardData
               <div className="queue-actions">
                 <button className="ghost" type="button" onClick={() => run(setListingState({ data: { id: item.id, action: item.paused ? "resume" : "pause" } }))}>{item.paused ? "Resume" : "Pause"}</button>
                 <button className="ghost" type="button" onClick={() => run(setListingState({ data: { id: item.id, action: "sold" } }))}>Mark sold</button>
+                <button className="ghost" type="button" onClick={() => run(placeOrder({ data: { kind: "feature_listing", listingId: item.id } }))}>Feature 7 days · ₦2,500</button>
               </div>
             )}
           </div>

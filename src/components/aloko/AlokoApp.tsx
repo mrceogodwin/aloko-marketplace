@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { GROK_PROVIDERS, authClient, signIn } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { activateRole, createListing, decideListing, getDashboard, listLiveListings, openThread, recordView, saveRadius, toggleSave, type AlokoRole, type AlokoRow, type DashboardData } from "@/lib/aloko.functions";
+import { activateRole, createListing, decideListing, getDashboard, listLiveListings, openThread, placeOrder, recordView, saveRadius, toggleSave, type AlokoRole, type AlokoRow, type DashboardData } from "@/lib/aloko.functions";
 import { ChatDesk } from "@/components/aloko/ChatDesk";
 import { Onboarding } from "@/components/aloko/Onboarding";
 import { Workspace } from "@/components/aloko/Workspace";
@@ -37,6 +37,7 @@ type Listing = {
   lat?: number | null;
   lng?: number | null;
   coverage?: string;
+  featured?: boolean;
 };
 
 const CATEGORIES = [
@@ -365,6 +366,7 @@ function fromRow(row: AlokoRow): Listing {
     lat: row.lat,
     lng: row.lng,
     coverage: row.coverage,
+    featured: row.featured,
   };
 }
 
@@ -482,7 +484,7 @@ function SignInPanel({ onDone }: { onDone: () => void }) {
   );
 }
 
-function PricingPage() {
+function PricingPage({ onPlan }: { onPlan: (kind: string) => void }) {
   return (
     <div className="sheet">
       <h2>Pricing</h2>
@@ -491,7 +493,7 @@ function PricingPage() {
         <strong>₦0</strong>
         <p>Buyers do not pay Aloko. Browse, save, message and collect giveaways for free. If you buy an item, you pay the seller directly. Aloko does not take that money.</p>
       </article>
-      <p className="type-lead">Only sellers, businesses, decluttering services and advertisers pay Aloko.</p>
+      <p className="type-lead">Only sellers, businesses, decluttering services and advertisers pay Aloko. A card is not charged here. Aloko confirms the payment, then the plan starts.</p>
       <article className="price-plan">
         <header>
           <span>Individual seller</span>
@@ -502,6 +504,7 @@ function PricingPage() {
           <li>Each listing after that, ₦1,000</li>
           <li>Feature one listing for 7 days, ₦2,500</li>
         </ul>
+        <button className="primary" type="button" onClick={() => onPlan("extra_listing")}>Buy one listing · ₦1,000</button>
       </article>
       <article className="price-plan">
         <header>
@@ -513,6 +516,7 @@ function PricingPage() {
           <li>Feature a product for 7 days, ₦2,500</li>
           <li>Homepage placement for 7 days, ₦30,000</li>
         </ul>
+        <button className="primary" type="button" onClick={() => onPlan("business_month")}>Start a business month · ₦12,000</button>
       </article>
       <article className="price-plan">
         <header>
@@ -523,6 +527,7 @@ function PricingPage() {
           <li>Service profile, areas and quote requests</li>
           <li>Promote the service for 7 days, ₦2,000</li>
         </ul>
+        <button className="primary" type="button" onClick={() => onPlan("service_month")}>Start a service month · ₦6,000</button>
       </article>
       <article className="price-plan">
         <header>
@@ -533,8 +538,9 @@ function PricingPage() {
           <li>A category spot for 7 days, ₦15,000</li>
           <li>A homepage spot for 7 days, ₦30,000</li>
         </ul>
+        <button className="ghost" type="button" onClick={() => onPlan("ad_category")}>Category spot · ₦15,000</button>
+        <button className="ghost" type="button" onClick={() => onPlan("ad_home")}>Homepage spot · ₦30,000</button>
       </article>
-      <p className="type-lead">These are Aloko’s charges. Payment is not switched on yet, so this page does not bill anyone.</p>
     </div>
   );
 }
@@ -851,7 +857,17 @@ export function AlokoApp() {
 
         <main className="aloko-main">
           {pricing ? (
-            <PricingPage />
+            <PricingPage onPlan={(kind) => {
+              if (!user) {
+                setPricing(false);
+                setTab("account");
+                setToast("Sign in first. Buyers are not charged.");
+                return;
+              }
+              void placeOrder({ data: { kind } })
+                .then(() => setToast("Saved. No card was charged. Aloko confirms it before the plan starts."))
+                .catch((err: unknown) => setToast(err instanceof Error ? err.message : "Could not save that plan."));
+            }} />
           ) : desk ? (
             <div className="sheet">
               <h2>Review queue</h2>

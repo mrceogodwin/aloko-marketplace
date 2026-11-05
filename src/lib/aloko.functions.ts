@@ -40,6 +40,7 @@ export type AlokoProfile = {
   lng: number | null;
   radiusKm: number;
   coverage: string;
+  planUntil: string | null;
 };
 
 export type AlokoRow = {
@@ -66,6 +67,7 @@ export type AlokoRow = {
   lat: number | null;
   lng: number | null;
   coverage: string;
+  featured: boolean;
 };
 
 export type ServiceRow = {
@@ -100,6 +102,7 @@ export type PersonRow = {
   businessName: string;
 };
 export type AuditRow = { id: string; action: string; target: string };
+export type OrderRow = { id: string; kind: string; amount: number; status: string; listingId: string; email?: string };
 export type DashboardData = {
   profile: AlokoProfile;
   listings: AlokoRow[];
@@ -112,6 +115,9 @@ export type DashboardData = {
   saves: string[];
   recent: { id: string; title: string }[];
   creditsLeft: number;
+  orders: OrderRow[];
+  deals: { id: string; title: string; soldPrice: number | null; city: string; soldAt: string | null }[];
+  waitingOrders: OrderRow[];
 };
 
 type Sql = Awaited<ReturnType<typeof getSql>>;
@@ -138,6 +144,7 @@ type ListingSql = {
   lat: number | null;
   lng: number | null;
   coverage: string;
+  featured_until: string | null;
 };
 
 function text(value: unknown, max: number) {
@@ -177,6 +184,7 @@ function toRow(row: ListingSql): AlokoRow {
     lat: row.lat,
     lng: row.lng,
     coverage: row.coverage || "city",
+    featured: Boolean(row.featured_until && new Date(row.featured_until).getTime() > Date.now()),
   };
 }
 
@@ -229,8 +237,9 @@ async function profileOf(sql: Sql, userId: string): Promise<AlokoProfile> {
     lng: number | null;
     radius_km: number;
     coverage: string;
+    plan_until: string | null;
   }>`
-    select display_name, account_type, service_area, business_name, city, interests, verification, cac_ref, suspended, onboarded, wallpaper, state, area, lat, lng, radius_km, coverage
+    select display_name, account_type, service_area, business_name, city, interests, verification, cac_ref, suspended, onboarded, wallpaper, state, area, lat, lng, radius_km, coverage, plan_until
     from aloko_profiles where user_id = ${userId}
   `;
   const row = rows[0];
@@ -262,13 +271,36 @@ async function profileOf(sql: Sql, userId: string): Promise<AlokoProfile> {
     lng: row?.lng ?? null,
     radiusKm: row?.radius_km ?? 0,
     coverage: row?.coverage || "city",
+    planUntil: row?.plan_until ?? null,
   };
+}
+
+const PRICES = {
+  extra_listing: 1000,
+  feature_listing: 2500,
+  business_month: 12000,
+  service_month: 6000,
+  ad_category: 15000,
+  ad_home: 30000,
+} as const;
+
+async function paidExtras(sql: Sql, userId: string) {
+  const rows = await sql<{ n: number }>`select count(*)::int as n from aloko_orders where user_id = ${userId} and kind = 'extra_listing' and status = 'paid'`;
+  return rows[0]?.n ?? 0;
+}
+
+async function allowance(sql: Sql, userId: string, roles: AlokoRole[], used: number) {
+  const profile = await profileOf(sql, userId);
+  const planOn = Boolean(profile.planUntil && new Date(profile.planUntil).getTime() > Date.now());
+  if (roles.includes("business") && planOn) return Math.max(0, 100 - used);
+  if (roles.includes("business")) return Math.max(0, 20 - used);
+  return Math.max(0, 3 + (await paidExtras(sql, userId)) - used);
 }
 
 export const listLiveListings = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await getSql();
   const rows = await sql<ListingSql>`
-    select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage
+    select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until
     from aloko_listings
     where status = 'active' and paused = false and sold_at is null
     order by created_at desc
@@ -284,7 +316,7 @@ export const getDashboard = createServerFn({ method: "GET" })
     const profile = await profileOf(sql, context.userId);
     const listings = (
       await sql<ListingSql>`
-        select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage
+        select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until
         from aloko_listings where user_id = ${context.userId} order by created_at desc limit 40
       `
     ).map(toRow);
@@ -322,7 +354,17 @@ export const getDashboard = createServerFn({ method: "GET" })
       select listing_id as id, title from aloko_views where user_id = ${context.userId} order by seen_at desc limit 8
     `;
     const used = listings.filter((item) => item.status !== "rejected").length;
-    const creditsLeft = profile.roles.includes("business") ? Math.max(0, 20 - used) : Math.max(0, 3 - used);
+    const creditsLeft = await allowance(sql, context.userId, profile.roles, used);
+    const orders = await sql<OrderRow>`
+      select id, kind, amount, status, listing_id as "listingId" from aloko_orders
+      where user_id = ${context.userId} order by created_at desc limit 20
+    `;
+    const deals = await sql<{ id: string; title: string; soldPrice: number | null; city: string; soldAt: string | null }>`
+      select id, title, sold_price as "soldPrice", city, sold_at as "soldAt"
+      from aloko_listings where buyer_id = ${context.userId} and sold_at is not null
+      order by sold_at desc limit 20
+    `;
+    let waitingOrders: OrderRow[] = [];
     let queue: AlokoRow[] = [];
     let serviceQueue: ServiceRow[] = [];
     let people: PersonRow[] = [];
@@ -330,7 +372,7 @@ export const getDashboard = createServerFn({ method: "GET" })
     if (isStaff(profile.roles)) {
       queue = (
         await sql<ListingSql>`
-          select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage
+          select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until
           from aloko_listings where status = 'pending' order by created_at desc limit 40
         `
       ).map(toRow);
@@ -366,8 +408,16 @@ export const getDashboard = createServerFn({ method: "GET" })
         verification: person.verification ?? "none",
         businessName: person.business_name ?? "",
       }));
+      waitingOrders = await sql<OrderRow>`
+        select o.id, o.kind, o.amount, o.status, o.listing_id as "listingId", u.email
+        from aloko_orders o
+        join "user" u on u.id = o.user_id
+        where o.status = 'unpaid'
+        order by o.created_at asc
+        limit 30
+      `;
     }
-    return { profile, listings, services, threads, queue, serviceQueue, people, audit: trail, saves, recent, creditsLeft };
+    return { profile, listings, services, threads, queue, serviceQueue, people, audit: trail, saves, recent, creditsLeft, orders, deals, waitingOrders };
   });
 
 export const saveMyProfile = createServerFn({ method: "POST" })
@@ -454,8 +504,8 @@ export const createListing = createServerFn({ method: "POST" })
     }
     const countRows = await sql<{ n: number }>`select count(*)::int as n from aloko_listings where user_id = ${context.userId} and status <> 'rejected'`;
     const used = countRows[0]?.n ?? 0;
-    const allowance = roles.includes("business") ? 20 : 3;
-    if (used >= allowance) throw new Error(roles.includes("business") ? "The business catalogue limit is 20 until subscriptions open." : "The 3 free listings are used. Seller packages are not open yet.");
+    const allowanceLeft = await allowance(sql, context.userId, roles, used);
+    if (allowanceLeft <= 0) throw new Error(roles.includes("business") ? "The catalogue is full. A paid business month opens 100 spaces." : "The free listings are used. Buy one more listing for ₦1,000. It starts after Aloko confirms the payment.");
     const stock = roles.includes("business") ? data.stock : 1;
     const seq = await sql<{ n: number }>`update aloko_codes set n = n + 1 where id = 1 returning n`;
     const code = `ALOKO-${PREFIX[data.category] ?? "ITM"}-${String(seq[0]?.n ?? used + 1).padStart(6, "0")}`;
@@ -912,5 +962,60 @@ export const saveRadius = createServerFn({ method: "POST" })
     await profileOf(sql, context.userId);
     await sql`update aloko_profiles set radius_km = ${data} where user_id = ${context.userId}`;
     return { radiusKm: data };
+  });
+
+export const placeOrder = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { kind: string; listingId?: string }) => {
+    const kind = text(input?.kind, 40);
+    if (!(kind in PRICES)) throw new Error("That plan is not on the price list.");
+    return { kind: kind as keyof typeof PRICES, listingId: text(input?.listingId, 80) };
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    await assertLive(sql, context.userId);
+    const open = await sql<{ id: string }>`
+      select id from aloko_orders
+      where user_id = ${context.userId} and kind = ${data.kind} and listing_id = ${data.listingId} and status = 'unpaid'
+      limit 1
+    `;
+    if (open[0]) throw new Error("That payment is already waiting for Aloko to confirm.");
+    if (data.kind === "feature_listing") {
+      const mine = await sql<{ id: string }>`select id from aloko_listings where id = ${data.listingId} and user_id = ${context.userId}`;
+      if (!mine[0]) throw new Error("Feature a listing that is yours.");
+    }
+    const id = crypto.randomUUID();
+    await sql`
+      insert into aloko_orders (id, user_id, kind, amount, listing_id)
+      values (${id}, ${context.userId}, ${data.kind}, ${PRICES[data.kind]}, ${data.listingId})
+    `;
+    return { id, amount: PRICES[data.kind] };
+  });
+
+export const confirmOrder = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((orderId: string) => text(orderId, 80))
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const roles = await rolesOf(sql, context.userId);
+    if (!roles.includes("super_admin")) throw new Error("Only a super admin can confirm a payment.");
+    const orders = await sql<{ id: string; user_id: string; kind: string; listing_id: string; status: string }>`
+      select id, user_id, kind, listing_id, status from aloko_orders where id = ${data}
+    `;
+    const order = orders[0];
+    if (!order || order.status !== "unpaid") throw new Error("That payment is not waiting.");
+    await sql`update aloko_orders set status = 'paid' where id = ${order.id}`;
+    if (order.kind === "feature_listing" && order.listing_id) {
+      await sql`update aloko_listings set featured_until = now() + interval '7 days' where id = ${order.listing_id}`;
+    }
+    if (order.kind === "business_month" || order.kind === "service_month") {
+      await sql`
+        update aloko_profiles
+        set plan_until = case when plan_until > now() then plan_until + interval '30 days' else now() + interval '30 days' end
+        where user_id = ${order.user_id}
+      `;
+    }
+    await audit(sql, context.userId, "confirm-payment", order.id);
+    return { ok: true };
   });
 
