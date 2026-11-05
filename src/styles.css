@@ -635,7 +635,8 @@
 }
 
 .listing-copy strong {
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -643,7 +644,31 @@
 
 .listing-copy b {
   color: var(--color-price);
-  font-size: 14px;
+  font-size: 13px;
+}
+
+.price-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.price-line s {
+  color: #8aa094;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.price-line em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  color: #c6f135;
+  background: #123524;
+  border-radius: 6px;
+  padding: 1px 4px;
 }
 
 .place {
@@ -1341,6 +1366,14 @@
   color: var(--color-price);
   font-size: 20px;
   font-family: var(--font-display);
+}
+
+.price-lg .price-line s {
+  font-size: 14px;
+}
+
+.price-lg .price-line em {
+  font-size: 12px;
 }
 
 .detail-actions {

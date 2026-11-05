@@ -13,6 +13,7 @@ export type HomeItem = {
   area?: string;
   featured?: boolean;
   coverage?: string;
+  was?: number | null;
 };
 
 type Lane = "all" | "sale" | "giveaway" | "bulk" | "service";
@@ -60,6 +61,11 @@ const CAMPAIGNS: { id: string; kicker: string; title: string; line: string; imag
 
 const money = (value: number) =>
   value === 0 ? "Free" : new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(value);
+
+function cutOf(price: number, was?: number | null) {
+  if (!was || was <= price || price <= 0) return 0;
+  return Math.round((1 - price / was) * 100);
+}
 
 function place(item: HomeItem) {
   return item.area ? `${item.area}, ${item.city}` : item.city;
@@ -427,14 +433,18 @@ function Card({ item, saved, onOpen, onSave, extra }: { item: HomeItem; saved: b
         <div className="listing-photo"><img src={item.image} alt="" /></div>
         <div className="listing-copy">
           <strong>{item.title}</strong>
-          <b>{money(item.price)}</b>
+          <span className="price-line">
+            <b>{money(item.price)}</b>
+            {cutOf(item.price, item.was) > 0 && item.was ? <s>{money(item.was)}</s> : null}
+            {cutOf(item.price, item.was) > 0 ? <em>-{cutOf(item.price, item.was)}%</em> : null}
+          </span>
           <span className="place">{place(item)}{extra ? ` · ${extra}` : ""}</span>
         </div>
       </button>
       <button className={saved ? "heart on" : "heart"} type="button" aria-label={saved ? "Unsave" : "Save"} onClick={() => onSave(item.id)}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-9a4 4 0 0 1 7-2 4 4 0 0 1 7 2c0 4.6-7 9-7 9Z" fill="none" stroke="currentColor" strokeWidth="1.8" /></svg>
       </button>
-      {item.verified && <span className="verified">✓</span>}
+      {item.verified && <span className="verified" title="Aloko verified this business">✓</span>}
     </article>
   );
 }

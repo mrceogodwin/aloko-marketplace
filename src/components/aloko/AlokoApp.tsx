@@ -39,6 +39,7 @@ type Listing = {
   lng?: number | null;
   coverage?: string;
   featured?: boolean;
+  was?: number | null;
 };
 
 const CATEGORIES = [
@@ -62,7 +63,7 @@ const SEED: Listing[] = [
     category: "Electronics",
     kind: "sale",
     image: "/aloko/phone.jpg",
-    verified: true,
+    verified: false,
     condition: "Like new",
     seller: "Tobi A.",
     description: "Deep purple, 128GB, battery health strong. Box and cable included. Pickup in Lekki or Island meetup.",
@@ -75,7 +76,7 @@ const SEED: Listing[] = [
     category: "Furniture",
     kind: "sale",
     image: "/aloko/sofa.jpg",
-    verified: true,
+    verified: false,
     condition: "Good",
     seller: "Amaka E.",
     description: "Emerald velvet two-seater from a Wuse apartment clear-out. No tears. Buyer arranges pickup.",
@@ -88,10 +89,11 @@ const SEED: Listing[] = [
     category: "Electronics",
     kind: "sale",
     image: "/aloko/laptop.jpg",
-    verified: true,
+    verified: false,
     condition: "Good",
     seller: "Chinedu O.",
     description: "14-inch, used for design work. Light keyboard shine. Comes with charger. Yaba meetup.",
+    was: 890000,
   },
   {
     id: "chair",
@@ -114,7 +116,7 @@ const SEED: Listing[] = [
     category: "Fashion",
     kind: "sale",
     image: "/aloko/sneaker.jpg",
-    verified: true,
+    verified: false,
     condition: "Like new",
     seller: "Kemi S.",
     description: "Worn twice. Size 42. Clean soles. Ikeja pickup.",
@@ -140,7 +142,7 @@ const SEED: Listing[] = [
     category: "Sports",
     kind: "sale",
     image: "/aloko/weights.jpg",
-    verified: true,
+    verified: false,
     condition: "Good",
     seller: "Ifeanyi M.",
     description: "Pair of hex dumbbells from a home gym clear-out. Rubber ends intact.",
@@ -153,7 +155,7 @@ const SEED: Listing[] = [
     category: "Home & Living",
     kind: "giveaway",
     image: "/aloko/chair.jpg",
-    verified: true,
+    verified: false,
     condition: "Fair",
     seller: "Ada O.",
     description: "Pack of eight story books. Light pencil marks. Free to any parent. Gwarinpa pickup only.",
@@ -170,6 +172,7 @@ const SEED: Listing[] = [
     condition: "Fair",
     seller: "Squad Desks",
     description: "Desks, chairs and a filing cabinet from a Victoria Island office move. Sold as one lot.",
+    was: 180000,
   },
 ];
 
@@ -205,6 +208,22 @@ const naira = (value: number) =>
   value === 0
     ? "Free"
     : new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(value);
+
+function cutOf(price: number, was?: number | null) {
+  if (!was || was <= price || price <= 0) return 0;
+  return Math.round((1 - price / was) * 100);
+}
+
+function PriceLine({ price, was }: { price: number; was?: number | null }) {
+  const cut = cutOf(price, was);
+  return (
+    <span className="price-line">
+      <b>{naira(price)}</b>
+      {cut > 0 && was ? <s>{naira(was)}</s> : null}
+      {cut > 0 ? <em>-{cut}%</em> : null}
+    </span>
+  );
+}
 
 function Icon({ name }: { name: "bell" | "heart" | "menu" | "pin" | "search" | "camera" | "home" | "bag" | "plus" | "chat" | "user" | "layers" | "truck" }) {
   const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
@@ -349,7 +368,6 @@ function fromRow(row: AlokoRow): Listing {
     category: row.category,
     kind: row.kind,
     image: row.image,
-    verified: row.status === "active",
     condition: "Good",
     seller: row.seller,
     description: row.description,
@@ -368,6 +386,8 @@ function fromRow(row: AlokoRow): Listing {
     lng: row.lng,
     coverage: row.coverage,
     featured: row.featured,
+    was: row.was,
+    verified: row.verified,
   };
 }
 
@@ -569,6 +589,7 @@ export function AlokoApp() {
   const [form, setForm] = useState({
     title: "",
     price: "",
+    was: "",
     city: "Lagos",
     category: "Electronics",
     kind: "sale" as Kind,
@@ -769,6 +790,7 @@ export function AlokoApp() {
     const title = form.title.trim();
     const description = form.description.trim();
     const price = form.kind === "giveaway" ? 0 : Number(form.price);
+    const was = form.kind === "giveaway" || form.was === "" ? undefined : Number(form.was);
     if (!user) {
       setTab("account");
       setToast("Sign in before listing an item.");
@@ -778,11 +800,13 @@ export function AlokoApp() {
     if (title.length < 4) return setFormError("Give the item a title of at least 4 characters.");
     if (description.length < 10) return setFormError("Add a short description so buyers know the condition.");
     if (form.kind !== "giveaway" && (!Number.isFinite(price) || price < 1)) return setFormError("Enter a whole naira price.");
+    if (was != null && (!Number.isFinite(was) || was <= price)) return setFormError("The price before must be higher than the price now.");
     void createListing({
       data: {
         title,
         description,
         price,
+        was,
         city: form.city,
         category: form.category,
         kind: form.kind,
@@ -791,7 +815,7 @@ export function AlokoApp() {
       },
     })
       .then((created) => {
-        setForm({ title: "", price: "", city: form.city, category: form.category, kind: "sale", description: "" });
+        setForm({ title: "", price: "", was: "", city: form.city, category: form.category, kind: "sale", description: "" });
         setPhoto("");
         setFormError("");
         setToast(`Sent for review as ${created.productCode}. It stays off the home until staff approve it.`);
@@ -1043,13 +1067,13 @@ export function AlokoApp() {
                       <img src={item.image} alt="" />
                       <div className="listing-copy">
                         <strong>{item.title}</strong>
-                        <b>{naira(item.price)}</b>
+                        <PriceLine price={item.price} was={item.was} />
                         <span className="place">
                           <Icon name="pin" />
                           {place}{km != null ? ` · ~${km} km` : ""}
                         </span>
                       </div>
-                      {item.verified && <span className="verified">✓</span>}
+                      {item.verified && <span className="verified" title="Aloko verified this business">✓</span>}
                     </button>
                       );
                     })}
@@ -1118,10 +1142,16 @@ export function AlokoApp() {
                   </select>
                 </label>
                 {form.kind !== "giveaway" && (
-                  <label>
-                    Price in naira
-                    <input inputMode="numeric" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value.replace(/[^\d]/g, "") })} placeholder="520000" />
-                  </label>
+                  <>
+                    <label>
+                      Price in naira
+                      <input inputMode="numeric" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value.replace(/[^\d]/g, "") })} placeholder="520000" />
+                    </label>
+                    <label>
+                      Price before this cut
+                      <input inputMode="numeric" value={form.was} onChange={(e) => setForm({ ...form, was: e.target.value.replace(/[^\d]/g, "") })} placeholder="Leave blank if the price did not drop" />
+                    </label>
+                  </>
                 )}
                 <label>
                   City
@@ -1218,12 +1248,12 @@ export function AlokoApp() {
               <img src={selected.image} alt="" />
               <h3>{selected.title}</h3>
               {selected.productCode && <p className="type-lead">{selected.productCode}</p>}
-              <div className="price-lg">{naira(selected.price)}</div>
+              <div className="price-lg"><PriceLine price={selected.price} was={selected.was} /></div>
               <p className="place">
                 <Icon name="pin" />
                 {selected.area ? `${selected.area}, ${selected.city}` : selected.city}
                 {selected.state && selected.state !== selected.city ? `, ${selected.state}` : ""} · {selected.condition} · {selected.seller}
-                {selected.verified ? " · Verified" : ""}
+                {selected.verified ? " · Aloko verified this business" : ""}
               </p>
               {originLat != null && originLng != null && selected.lat != null && selected.lng != null && (
                 <p className="type-lead">About {distanceKm({ lat: originLat, lng: originLng }, { lat: selected.lat, lng: selected.lng })} km from your area. Distances are area to area, not a street measurement.</p>

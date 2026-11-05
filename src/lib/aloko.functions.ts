@@ -68,6 +68,8 @@ export type AlokoRow = {
   lng: number | null;
   coverage: string;
   featured: boolean;
+  was: number | null;
+  verified: boolean;
 };
 
 export type ServiceRow = {
@@ -145,6 +147,8 @@ type ListingSql = {
   lng: number | null;
   coverage: string;
   featured_until: string | null;
+  was_naira: number | null;
+  business_verified: boolean;
 };
 
 function text(value: unknown, max: number) {
@@ -185,6 +189,8 @@ function toRow(row: ListingSql): AlokoRow {
     lng: row.lng,
     coverage: row.coverage || "city",
     featured: Boolean(row.featured_until && new Date(row.featured_until).getTime() > Date.now()),
+    was: row.was_naira && row.was_naira > row.price_naira ? row.was_naira : null,
+    verified: Boolean(row.business_verified),
   };
 }
 
@@ -300,7 +306,8 @@ async function allowance(sql: Sql, userId: string, roles: AlokoRole[], used: num
 export const listLiveListings = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await getSql();
   const rows = await sql<ListingSql>`
-    select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until
+    select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until, was_naira,
+      coalesce((select verification = 'approved' and account_type = 'business' from aloko_profiles where user_id = aloko_listings.user_id), false) as business_verified
     from aloko_listings
     where status = 'active' and paused = false and sold_at is null
     order by created_at desc
@@ -316,7 +323,8 @@ export const getDashboard = createServerFn({ method: "GET" })
     const profile = await profileOf(sql, context.userId);
     const listings = (
       await sql<ListingSql>`
-        select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until
+        select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until, was_naira,
+      coalesce((select verification = 'approved' and account_type = 'business' from aloko_profiles where user_id = aloko_listings.user_id), false) as business_verified
         from aloko_listings where user_id = ${context.userId} order by created_at desc limit 40
       `
     ).map(toRow);
@@ -372,7 +380,8 @@ export const getDashboard = createServerFn({ method: "GET" })
     if (isStaff(profile.roles)) {
       queue = (
         await sql<ListingSql>`
-          select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until
+          select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until, was_naira,
+      coalesce((select verification = 'approved' and account_type = 'business' from aloko_profiles where user_id = aloko_listings.user_id), false) as business_verified
           from aloko_listings where status = 'pending' order by created_at desc limit 40
         `
       ).map(toRow);
@@ -475,7 +484,7 @@ export const setActiveRole = createServerFn({ method: "POST" })
 
 export const createListing = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: { title: string; description: string; price: number; city: string; category: string; kind: string; image: string; seller: string; stock?: number }) => {
+  .validator((input: { title: string; description: string; price: number; was?: number; city: string; category: string; kind: string; image: string; seller: string; stock?: number }) => {
     const title = text(input?.title, 80);
     const description = text(input?.description, 500);
     const city = text(input?.city, 40);
@@ -485,6 +494,8 @@ export const createListing = createServerFn({ method: "POST" })
     const seller = text(input?.seller, 40) || "Aloko member";
     const price = kind === "giveaway" ? 0 : Math.round(Number(input?.price));
     const stock = Math.max(1, Math.min(999, Math.round(Number(input?.stock ?? 1)) || 1));
+    const wasRaw = Math.round(Number(input?.was));
+    const was = kind !== "giveaway" && Number.isFinite(wasRaw) && wasRaw > 0 ? wasRaw : null;
     if (title.length < 4) throw new Error("Give the item a title of at least 4 characters.");
     if (description.length < 10) throw new Error("Add a short description so buyers know the condition.");
     if (!CITIES.includes(city)) throw new Error("Choose a city.");
@@ -493,7 +504,8 @@ export const createListing = createServerFn({ method: "POST" })
     if (!image.startsWith("data:image/jpeg;base64,")) throw new Error("Add a photo.");
     if (image.length > 450000) throw new Error("That photo is too large. Try another.");
     if (kind !== "giveaway" && (!Number.isFinite(price) || price < 1 || price > 100000000)) throw new Error("Enter a whole naira price.");
-    return { title, description, price, city, category, kind, image, seller, stock };
+    if (was != null && was <= price) throw new Error("The price before must be higher than the price now.");
+    return { title, description, price, was, city, category, kind, image, seller, stock };
   })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
@@ -512,9 +524,9 @@ export const createListing = createServerFn({ method: "POST" })
     const id = crypto.randomUUID();
     await sql`
       insert into aloko_listings (
-        id, user_id, title, description, price_naira, city, category, kind, image, status, seller_name, product_code, stock
+        id, user_id, title, description, price_naira, was_naira, city, category, kind, image, status, seller_name, product_code, stock
       ) values (
-        ${id}, ${context.userId}, ${data.title}, ${data.description}, ${data.price}, ${data.city}, ${data.category}, ${data.kind}, ${data.image}, 'pending', ${data.seller}, ${code}, ${stock}
+        ${id}, ${context.userId}, ${data.title}, ${data.description}, ${data.price}, ${data.was}, ${data.city}, ${data.category}, ${data.kind}, ${data.image}, 'pending', ${data.seller}, ${code}, ${stock}
       )
     `;
     const profiles = await sql<{ area: string; coverage: string }>`select area, coverage from aloko_profiles where user_id = ${context.userId}`;
