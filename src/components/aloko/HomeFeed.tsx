@@ -411,11 +411,7 @@ export function HomeFeed({
 
       <footer className="aloko-foot">
         <h2 className="foot-brand">
-          <svg className="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
-            <path d="M32 4c10 16 22 30 22 42a22 22 0 0 1-44 0C10 34 22 20 32 4Z" fill="#c6f135" />
-            <path d="M32 16v22" stroke="#012115" strokeWidth="3" strokeLinecap="round" />
-            <circle cx="32" cy="44" r="4.2" fill="#012115" />
-          </svg>
+          <img className="brand-mark" src="/aloko/mark.png" alt="" />
           Aloko
         </h2>
         <p className={about ? "" : "clamp"}>
