@@ -34,11 +34,30 @@ const LINES = [
   { a: "Nigeria’s place", b: "to pass things on." },
 ];
 
+const SECTION_CATEGORY: Record<string, string> = {
+  wardrobe: "Fashion",
+  electronics: "Electronics",
+  furniture: "Furniture",
+  home: "Home & Living",
+  beds: "Beds",
+  generators: "Generators",
+  appliances: "Appliances",
+  kids: "Kids",
+  garden: "Garden",
+  tools: "Tools",
+  music: "Music",
+  beauty: "Beauty",
+  pets: "Pets",
+  storage: "Storage",
+  sports: "Sports",
+  books: "Books",
+};
+
 const CHANNELS: { label: string; image: string; kind: "all" | HomeItem["kind"]; category: string }[] = [
   { label: "Phones", image: "/aloko/phone.jpg", kind: "all", category: "Electronics" },
   { label: "Kitchen", image: "/aloko/blender.jpg", kind: "all", category: "Home & Living" },
   { label: "Baby", image: "/aloko/chair.jpg", kind: "giveaway", category: "Home & Living" },
-  { label: "Books", image: "/aloko/chair.jpg", kind: "giveaway", category: "All" },
+  { label: "Books", image: "/aloko/chair.jpg", kind: "giveaway", category: "Books" },
   { label: "Office", image: "/aloko/sofa.jpg", kind: "bulk", category: "Furniture" },
   { label: "Vehicles", image: "/aloko/weights.jpg", kind: "all", category: "Vehicles" },
   { label: "Electronics", image: "/aloko/laptop.jpg", kind: "all", category: "Electronics" },
@@ -159,6 +178,7 @@ export function HomeFeed({
 
   const pool = lane === "all" || lane === "service" ? items : items.filter((item) => item.kind === lane);
   const rowsFor = (id: string) => {
+    const category = SECTION_CATEGORY[id];
     if (id === "just_listed") return pool.slice(0, 8);
     if (id === "free") return pool.filter((item) => item.kind === "giveaway");
     if (id === "near") return around.map((row) => row.item);
@@ -167,10 +187,7 @@ export function HomeFeed({
     if (id === "drops") return pool.filter((item) => (item.was ?? 0) > item.price);
     if (id === "good") return pool.filter((item) => item.condition === "Like new");
     if (id === "second") return pool.filter((item) => item.condition === "Good" && item.kind === "sale");
-    if (id === "wardrobe") return pool.filter((item) => item.category === "Fashion");
-    if (id === "electronics") return pool.filter((item) => item.category === "Electronics");
-    if (id === "furniture") return pool.filter((item) => item.category === "Furniture");
-    if (id === "home") return pool.filter((item) => item.category === "Home & Living");
+    if (category) return pool.filter((item) => item.category === category);
     if (id === "verified") return pool.filter((item) => item.condition === "Fair");
     return [];
   };
@@ -353,7 +370,7 @@ export function HomeFeed({
           </div>
 
           <div className="big-cats">
-            {CHANNELS.slice(0, 6).map((item) => (
+            {CHANNELS.filter((item) => ["Beds", "Generators", "Appliances", "Kids", "Garden", "Tools", "Music", "Beauty", "Pets"].includes(item.label)).map((item) => (
               <button key={item.label} className="big-cat" type="button" onClick={() => onBrowse(item.kind, item.category)}>
                 <img src={item.image} alt="" />
                 <span>{item.label}</span>
@@ -381,7 +398,7 @@ export function HomeFeed({
               </section>
               )
             ) : (
-              <Row key={section.id} title={section.title} items={rows} saved={saved} onOpen={onOpen} onSave={onSave} onAll={() => onBrowse(section.id === "free" ? "giveaway" : section.id === "clearout" ? "bulk" : "all", section.id === "wardrobe" ? "Fashion" : section.id === "electronics" ? "Electronics" : section.id === "furniture" ? "Furniture" : section.id === "home" ? "Home & Living" : "All")} />
+              <Row key={section.id} title={section.title} items={rows} saved={saved} onOpen={onOpen} onSave={onSave} onAll={() => onBrowse(section.id === "free" ? "giveaway" : section.id === "clearout" ? "bulk" : "all", SECTION_CATEGORY[section.id] ?? "All")} />
             );
             if (!slot) return body;
             return (

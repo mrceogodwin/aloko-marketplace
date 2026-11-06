@@ -9,13 +9,28 @@ const PUBLIC_ROLES = ["buyer", "individual", "business", "service"] as const;
 const OWNERS = new Set(["officialtruegliterz@gmail.com"]);
 const KINDS = ["sale", "giveaway", "bulk"] as const;
 const CITIES = ["Lagos", "Abuja", "Port Harcourt", "Ibadan", "Enugu", "Benin City", "Kano"];
-const CATEGORIES = ["Electronics", "Furniture", "Fashion", "Home & Living", "Sports"];
+const CATEGORIES = ["Electronics", "Furniture", "Fashion", "Home & Living", "Sports", "Beds", "Generators", "Appliances", "Kids", "Garden", "Tools", "Music", "Beauty", "Pets", "Storage", "Vehicles", "Books", "Office"];
+const CONDITIONS = ["New", "Like new", "Good", "Fair", "For parts"] as const;
+const HANDOVER = ["neighbourhood", "city", "state", "nationwide"] as const;
 const PREFIX: Record<string, string> = {
   Electronics: "ELE",
   Furniture: "FUR",
   Fashion: "FAS",
   "Home & Living": "HOM",
   Sports: "SPO",
+  Beds: "BED",
+  Generators: "GEN",
+  Appliances: "APP",
+  Kids: "KID",
+  Garden: "GAR",
+  Tools: "TOO",
+  Music: "MUS",
+  Beauty: "BEA",
+  Pets: "PET",
+  Storage: "STO",
+  Vehicles: "VEH",
+  Books: "BOK",
+  Office: "OFF",
 };
 
 export type AlokoRole = (typeof ALL_ROLES)[number];
@@ -71,6 +86,8 @@ export type AlokoRow = {
   featured: boolean;
   was: number | null;
   verified: boolean;
+  condition: string;
+  openToOffers: boolean;
   sellerId?: string;
   postedAt?: string | null;
   sellerOnline?: boolean;
@@ -156,6 +173,8 @@ type ListingSql = {
   coverage: string;
   featured_until: string | null;
   was_naira: number | null;
+  condition?: string;
+  open_to_offers?: boolean;
   business_verified: boolean;
   seller_id?: string;
   created_at?: string | null;
@@ -202,6 +221,8 @@ function toRow(row: ListingSql): AlokoRow {
     featured: Boolean(row.featured_until && new Date(row.featured_until).getTime() > Date.now()),
     was: row.was_naira && row.was_naira > row.price_naira ? row.was_naira : null,
     verified: Boolean(row.business_verified),
+    condition: row.condition || "Good",
+    openToOffers: row.open_to_offers !== false,
     sellerId: row.seller_id || "",
     postedAt: row.created_at ?? null,
     sellerOnline: Boolean(row.seller_online),
@@ -323,7 +344,7 @@ async function allowance(sql: Sql, userId: string, roles: AlokoRole[], used: num
 export const listLiveListings = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await getSql();
   const rows = await sql<ListingSql>`
-    select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until, was_naira,
+    select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until, was_naira, condition, open_to_offers,
       aloko_listings.created_at, aloko_listings.user_id as seller_id,
       coalesce((select verification = 'approved' and account_type = 'business' from aloko_profiles where user_id = aloko_listings.user_id), false) as business_verified,
       coalesce((select last_seen > now() - interval '5 minutes' from aloko_profiles where user_id = aloko_listings.user_id), false) as seller_online
@@ -342,7 +363,7 @@ export const getDashboard = createServerFn({ method: "GET" })
     const profile = await profileOf(sql, context.userId);
     const listings = (
       await sql<ListingSql>`
-        select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until, was_naira,
+        select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until, was_naira, condition, open_to_offers,
       coalesce((select verification = 'approved' and account_type = 'business' from aloko_profiles where user_id = aloko_listings.user_id), false) as business_verified
         from aloko_listings where user_id = ${context.userId} order by created_at desc limit 40
       `
@@ -402,7 +423,7 @@ export const getDashboard = createServerFn({ method: "GET" })
     if (isStaff(profile.roles)) {
       queue = (
         await sql<ListingSql>`
-          select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until, was_naira,
+          select id, title, price_naira, city, category, kind, image, seller_name, description, status, product_code, paused, sold_at, stock, sold_price, buyer_name, negotiated, area, state, lat, lng, coverage, featured_until, was_naira, condition, open_to_offers,
       coalesce((select verification = 'approved' and account_type = 'business' from aloko_profiles where user_id = aloko_listings.user_id), false) as business_verified
           from aloko_listings where status = 'pending' order by created_at desc limit 40
         `
@@ -526,7 +547,7 @@ export const setActiveRole = createServerFn({ method: "POST" })
 
 export const createListing = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: { title: string; description: string; price: number; was?: number; city: string; category: string; kind: string; image: string; seller: string; stock?: number }) => {
+  .validator((input: { title: string; description: string; price: number; was?: number; city: string; category: string; kind: string; image: string; seller: string; stock?: number; condition?: string; coverage?: string; openToOffers?: boolean }) => {
     const title = text(input?.title, 80);
     const description = text(input?.description, 500);
     const city = text(input?.city, 40);
@@ -534,20 +555,25 @@ export const createListing = createServerFn({ method: "POST" })
     const kind = text(input?.kind, 20);
     const image = String(input?.image ?? "");
     const seller = text(input?.seller, 40) || "Aloko member";
+    const condition = text(input?.condition, 20);
+    const coverage = text(input?.coverage, 20);
     const price = kind === "giveaway" ? 0 : Math.round(Number(input?.price));
     const stock = Math.max(1, Math.min(999, Math.round(Number(input?.stock ?? 1)) || 1));
     const wasRaw = Math.round(Number(input?.was));
     const was = kind !== "giveaway" && Number.isFinite(wasRaw) && wasRaw > 0 ? wasRaw : null;
+    const openToOffers = input?.openToOffers !== false;
     if (title.length < 4) throw new Error("Give the item a title of at least 4 characters.");
-    if (description.length < 10) throw new Error("Add a short description so buyers know the condition.");
+    if (description.length < 10) throw new Error("Add a short description so buyers know what is included.");
     if (!CITIES.includes(city)) throw new Error("Choose a city.");
     if (!CATEGORIES.includes(category)) throw new Error("Choose a category.");
     if (!(KINDS as readonly string[]).includes(kind)) throw new Error("Choose a listing type.");
+    if (!(CONDITIONS as readonly string[]).includes(condition)) throw new Error("Choose the condition: new or used.");
+    if (!(HANDOVER as readonly string[]).includes(coverage)) throw new Error("Choose pickup or delivery.");
     if (!image.startsWith("data:image/jpeg;base64,")) throw new Error("Add a photo.");
     if (image.length > 450000) throw new Error("That photo is too large. Try another.");
     if (kind !== "giveaway" && (!Number.isFinite(price) || price < 1 || price > 100000000)) throw new Error("Enter a whole naira price.");
     if (was != null && was <= price) throw new Error("The price before must be higher than the price now.");
-    return { title, description, price, was, city, category, kind, image, seller, stock };
+    return { title, description, price, was, city, category, kind, image, seller, stock, condition, coverage, openToOffers };
   })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
@@ -560,18 +586,18 @@ export const createListing = createServerFn({ method: "POST" })
     const used = countRows[0]?.n ?? 0;
     const allowanceLeft = await allowance(sql, context.userId, roles, used);
     if (allowanceLeft <= 0) throw new Error(roles.includes("business") ? "The catalogue is full. A paid business month opens 100 spaces." : "The free listings are used. Buy one more listing for ₦1,000. It starts after Paystack confirms the payment.");
-    const stock = roles.includes("business") ? data.stock : 1;
+    const stock = Math.min(roles.includes("business") ? 999 : 30, data.stock);
     const seq = await sql<{ n: number }>`update aloko_codes set n = n + 1 where id = 1 returning n`;
     const code = `ALOKO-${PREFIX[data.category] ?? "ITM"}-${String(seq[0]?.n ?? used + 1).padStart(6, "0")}`;
     const id = crypto.randomUUID();
     await sql`
       insert into aloko_listings (
-        id, user_id, title, description, price_naira, was_naira, city, category, kind, image, status, seller_name, product_code, stock
+        id, user_id, title, description, price_naira, was_naira, city, category, kind, image, status, seller_name, product_code, stock, condition, open_to_offers
       ) values (
-        ${id}, ${context.userId}, ${data.title}, ${data.description}, ${data.price}, ${data.was}, ${data.city}, ${data.category}, ${data.kind}, ${data.image}, 'pending', ${data.seller}, ${code}, ${stock}
+        ${id}, ${context.userId}, ${data.title}, ${data.description}, ${data.price}, ${data.was}, ${data.city}, ${data.category}, ${data.kind}, ${data.image}, 'pending', ${data.seller}, ${code}, ${stock}, ${data.condition}, ${data.openToOffers}
       )
     `;
-    const profiles = await sql<{ area: string; coverage: string }>`select area, coverage from aloko_profiles where user_id = ${context.userId}`;
+    const profiles = await sql<{ area: string }>`select area from aloko_profiles where user_id = ${context.userId}`;
     const spot = placeFor(data.city, profiles[0]?.area ?? "");
     await sql`
       update aloko_listings set
@@ -579,7 +605,7 @@ export const createListing = createServerFn({ method: "POST" })
         state = ${spot?.state ?? ""},
         lat = ${spot?.lat ?? null},
         lng = ${spot?.lng ?? null},
-        coverage = ${profiles[0]?.coverage || "city"}
+        coverage = ${data.coverage}
       where id = ${id}
     `;
     return { id, productCode: code };
@@ -1095,6 +1121,18 @@ const DEFAULT_HOME: [string, string][] = [
   ["electronics", "Electronics worth buying"],
   ["furniture", "Furniture around you"],
   ["home", "Home essentials"],
+  ["beds", "Beds"],
+  ["generators", "Generators"],
+  ["appliances", "Appliances"],
+  ["kids", "Kids"],
+  ["garden", "Garden"],
+  ["tools", "Tools"],
+  ["music", "Music"],
+  ["beauty", "Beauty"],
+  ["pets", "Pets"],
+  ["storage", "Storage"],
+  ["sports", "Sports gear"],
+  ["books", "Books"],
   ["verified", "Still useful"],
   ["services", "Need help clearing out?"],
 ];
@@ -1103,12 +1141,9 @@ export type HomeSection = { id: string; title: string; enabled: boolean; sort: n
 
 export const listHome = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await getSql();
-  const existing = await sql<{ n: number }>`select count(*)::int as n from aloko_home`;
-  if ((existing[0]?.n ?? 0) === 0) {
-    for (let i = 0; i < DEFAULT_HOME.length; i += 1) {
-      const [id, title] = DEFAULT_HOME[i];
-      await sql`insert into aloko_home (id, title, enabled, sort) values (${id}, ${title}, true, ${i + 1}) on conflict (id) do nothing`;
-    }
+  for (let i = 0; i < DEFAULT_HOME.length; i += 1) {
+    const [id, title] = DEFAULT_HOME[i];
+    await sql`insert into aloko_home (id, title, enabled, sort) values (${id}, ${title}, true, ${i + 1}) on conflict (id) do nothing`;
   }
   await sql`update aloko_home set title = 'Still useful' where id = 'verified' and title = 'Verified sellers'`;
   return sql<HomeSection>`select id, title, enabled, sort from aloko_home order by sort asc, id asc`;

@@ -43,6 +43,7 @@ type Listing = {
   sellerId?: string;
   postedAt?: string | null;
   sellerOnline?: boolean;
+  openToOffers?: boolean;
 };
 
 const CATEGORIES = [
@@ -61,6 +62,9 @@ const CATEGORIES = [
   { id: "Beauty", image: "/aloko/sneaker.jpg" },
   { id: "Pets", image: "/aloko/chair.jpg" },
   { id: "Storage", image: "/aloko/sofa.jpg" },
+  { id: "Vehicles", image: "/aloko/weights.jpg" },
+  { id: "Books", image: "/aloko/chair.jpg" },
+  { id: "Office", image: "/aloko/sofa.jpg" },
 ] as const;
 
 type AccountType = AlokoRole;
@@ -175,7 +179,7 @@ const SEED: Listing[] = [
     title: "Children story books",
     price: 0,
     city: "Abuja",
-    category: "Home & Living",
+    category: "Books",
     kind: "giveaway",
     image: "/aloko/chair.jpg",
     verified: false,
@@ -196,6 +200,67 @@ const SEED: Listing[] = [
     seller: "Squad Desks",
     description: "Desks, chairs and a filing cabinet from a Victoria Island office move. Sold as one lot.",
     was: 180000,
+    stock: 12,
+    openToOffers: true,
+  },
+  {
+    id: "bed",
+    title: "6-spring bed frame",
+    price: 65000,
+    city: "Lagos",
+    category: "Beds",
+    kind: "sale",
+    image: "/aloko/sofa.jpg",
+    verified: false,
+    condition: "Good",
+    seller: "Tobi A.",
+    description: "Wooden 6-spring frame, mattress not included. Lekki pickup.",
+    stock: 1,
+    openToOffers: true,
+  },
+  {
+    id: "gen",
+    title: "Small petrol generator",
+    price: 185000,
+    city: "Port Harcourt",
+    category: "Generators",
+    kind: "sale",
+    image: "/aloko/weights.jpg",
+    verified: false,
+    condition: "Fair",
+    seller: "Blessing T.",
+    description: "Starts with a pull. Used for a shop. Tank is sound. GRA meetup.",
+    stock: 1,
+    openToOffers: false,
+  },
+  {
+    id: "kids",
+    title: "Children's wooden chair",
+    price: 0,
+    city: "Ibadan",
+    category: "Kids",
+    kind: "giveaway",
+    image: "/aloko/chair.jpg",
+    verified: false,
+    condition: "Good",
+    seller: "Amaka E.",
+    description: "One small chair a child has outgrown. Free to a family nearby.",
+    stock: 1,
+  },
+  {
+    id: "tools",
+    title: "Home tool set",
+    price: 22000,
+    city: "Enugu",
+    category: "Tools",
+    kind: "sale",
+    image: "/aloko/weights.jpg",
+    verified: false,
+    condition: "Good",
+    seller: "Ifeanyi M.",
+    description: "Hammer, pliers and a set of screwdrivers. Handles are tight.",
+    stock: 1,
+    openToOffers: true,
   },
 ];
 
@@ -209,6 +274,10 @@ const SPOTS: Record<string, { area: string; coverage: string }> = {
   weights: { area: "Surulere", coverage: "city" },
   books: { area: "Gwarinpa", coverage: "neighbourhood" },
   bulk: { area: "Lekki", coverage: "nationwide" },
+  bed: { area: "Lekki", coverage: "neighbourhood" },
+  gen: { area: "GRA", coverage: "city" },
+  kids: { area: "Bodija", coverage: "neighbourhood" },
+  tools: { area: "Independence Layout", coverage: "city" },
 };
 
 for (const item of SEED) {
@@ -391,7 +460,8 @@ function fromRow(row: AlokoRow): Listing {
     category: row.category,
     kind: row.kind,
     image: row.image,
-    condition: "Good",
+    condition: row.condition || "Good",
+    openToOffers: row.openToOffers,
     seller: row.seller,
     description: row.description,
     status: row.status,
@@ -628,6 +698,10 @@ export function AlokoApp() {
     city: "Lagos",
     category: "Electronics",
     kind: "sale" as Kind,
+    condition: "Good",
+    stock: "1",
+    coverage: "city",
+    offers: "yes",
     description: "",
   });
   const [formError, setFormError] = useState("");
@@ -892,6 +966,7 @@ export function AlokoApp() {
     if (description.length < 10) return setFormError("Add a short description so buyers know the condition.");
     if (form.kind !== "giveaway" && (!Number.isFinite(price) || price < 1)) return setFormError("Enter a whole naira price.");
     if (was != null && (!Number.isFinite(was) || was <= price)) return setFormError("The price before must be higher than the price now.");
+    const stock = Math.max(1, Math.round(Number(form.stock)) || 1);
     void createListing({
       data: {
         title,
@@ -903,10 +978,14 @@ export function AlokoApp() {
         kind: form.kind,
         image: photo,
         seller: name.trim() || user.displayName || "Aloko member",
+        stock,
+        condition: form.condition,
+        coverage: form.coverage,
+        openToOffers: form.offers === "yes",
       },
     })
       .then((created) => {
-        setForm({ title: "", price: "", was: "", city: form.city, category: form.category, kind: "sale", description: "" });
+        setForm({ title: "", price: "", was: "", city: form.city, category: form.category, kind: "sale", condition: "Good", stock: "1", coverage: "city", offers: "yes", description: "" });
         setPhoto("");
         setFormError("");
         setToast(`Sent for review as ${created.productCode}. It stays off the home until staff approve it.`);
@@ -1254,23 +1333,19 @@ export function AlokoApp() {
                   </select>
                 </label>
                 {form.kind !== "giveaway" && (
-                  <>
-                    <label>
-                      Price in naira
-                      <input inputMode="numeric" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value.replace(/[^\d]/g, "") })} placeholder="520000" />
-                    </label>
-                    <label>
-                      Price before this cut
-                      <input inputMode="numeric" value={form.was} onChange={(e) => setForm({ ...form, was: e.target.value.replace(/[^\d]/g, "") })} placeholder="Leave blank if the price did not drop" />
-                    </label>
-                  </>
+                  <label>
+                    Price in naira
+                    <input inputMode="numeric" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value.replace(/[^\d]/g, "") })} placeholder="520000" required />
+                  </label>
                 )}
                 <label>
-                  City
-                  <select value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })}>
-                    {CITIES.map((place) => (
-                      <option key={place}>{place}</option>
-                    ))}
+                  Condition
+                  <select value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value })}>
+                    <option>New</option>
+                    <option>Like new</option>
+                    <option>Good</option>
+                    <option>Fair</option>
+                    <option>For parts</option>
                   </select>
                 </label>
                 <label>
@@ -1282,8 +1357,42 @@ export function AlokoApp() {
                   </select>
                 </label>
                 <label>
-                  Description
-                  <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Condition, what’s included, pickup area." />
+                  City
+                  <select value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })}>
+                    {CITIES.map((place) => (
+                      <option key={place}>{place}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  How many
+                  <input inputMode="numeric" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value.replace(/[^\d]/g, "") })} placeholder="1" required />
+                </label>
+                <label>
+                  Pickup or delivery
+                  <select value={form.coverage} onChange={(e) => setForm({ ...form, coverage: e.target.value })}>
+                    <option value="neighbourhood">Pickup in this area</option>
+                    <option value="city">Delivery in this city</option>
+                    <option value="state">Delivery in this state</option>
+                    <option value="nationwide">Nationwide delivery</option>
+                  </select>
+                </label>
+                <label>
+                  Open to a lower price
+                  <select value={form.offers} onChange={(e) => setForm({ ...form, offers: e.target.value })}>
+                    <option value="yes">Yes, buyers can negotiate</option>
+                    <option value="no">No, the price is firm</option>
+                  </select>
+                </label>
+                {form.kind !== "giveaway" && (
+                  <label>
+                    Price before this cut
+                    <input inputMode="numeric" value={form.was} onChange={(e) => setForm({ ...form, was: e.target.value.replace(/[^\d]/g, "") })} placeholder="Leave blank if the price did not drop" />
+                  </label>
+                )}
+                <label>
+                  What is included
+                  <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What comes with it, any fault, where they collect." required />
                 </label>
                 {formError && <p className="err">{formError}</p>}
                 <button className="primary" type="submit">
@@ -1384,18 +1493,22 @@ export function AlokoApp() {
                   }}>{follows.includes(selected.sellerId) ? "Following" : "Follow"}</button>
                 )}
               </div>
-              {selected.productCode && <p className="type-lead">{selected.productCode}</p>}
               <div className="price-lg"><PriceLine price={selected.price} was={selected.was} /></div>
-              <p className="place">
-                <Icon name="pin" />
-                {selected.area ? `${selected.area}, ${selected.city}` : selected.city}
-                {selected.state && selected.state !== selected.city ? `, ${selected.state}` : ""} · {selected.condition} · {selected.seller}
-                {selected.verified ? " · Aloko verified this business" : ""}
-              </p>
+              <dl className="facts">
+                <div><dt>Type</dt><dd>{selected.kind === "giveaway" ? "Give away" : selected.kind === "bulk" ? "Bulk / clear-out" : "For sale"}</dd></div>
+                <div><dt>Condition</dt><dd>{selected.condition}</dd></div>
+                <div><dt>Category</dt><dd>{selected.category}</dd></div>
+                <div><dt>Where</dt><dd>{selected.area ? `${selected.area}, ${selected.city}` : selected.city}{selected.state && selected.state !== selected.city ? `, ${selected.state}` : ""}</dd></div>
+                <div><dt>How many</dt><dd>{selected.stock && selected.stock > 1 ? `${selected.stock} available` : "1 available"}</dd></div>
+                <div><dt>Handover</dt><dd>{reach(selected.coverage)}</dd></div>
+                <div><dt>Price talk</dt><dd>{selected.kind === "giveaway" ? "Free to collect" : selected.openToOffers === false ? "Price is firm" : "Open to offers"}</dd></div>
+                <div><dt>Posted</dt><dd>{selected.postedAt ? new Date(selected.postedAt).toLocaleString("en-NG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "Sample listing"}</dd></div>
+              </dl>
+              {selected.productCode && <p className="type-lead">{selected.productCode}</p>}
               {originLat != null && originLng != null && selected.lat != null && selected.lng != null && (
                 <p className="type-lead">About {distanceKm({ lat: originLat, lng: originLng }, { lat: selected.lat, lng: selected.lng })} km from your area. Distances are area to area, not a street measurement.</p>
               )}
-              <p className="type-lead">{reach(selected.coverage)}. The exact pickup point is shared only in chat.</p>
+              <p className="type-lead">The exact pickup point is shared only in chat.</p>
               <p>{selected.description}</p>
               <div className="detail-actions">
                 <button className="ghost" type="button" onClick={() => toggleSaved(selected.id)}>
